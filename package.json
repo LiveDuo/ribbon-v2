@@ -36,47 +36,7 @@
     "underscore": "^1.9.0"
   },
   "scripts": {
-    "test": "yarn test:eth && yarn test:avax && yarn test:oracles && yarn test:utils",
-    "test:eth": "CHAINID=1 npx hardhat test test/*.ts test/libraries/*.ts",
-    "test:avax": "CHAINID=43114 npx hardhat test test/RibbonThetaVault.ts",
-    "test:sanity": "CHAINID=43114 npx hardhat test test/VaultSanityCheck.ts",
-    "test:oracles": "npx hardhat test test/oracles/*.ts",
-    "test:upgrade": "npx hardhat test test/upgrades/*.ts",
-    "test:integration": "npx hardhat test test/integration/*.ts",
-    "test:utils": "npx hardhat test test/utils/*.ts",
-    "compile": "CHAINID=1 npx hardhat compile",
-    "deploy": "npx hardhat deploy",
-    "etherscan-verify": "npx hardhat etherscan-verify",
-    "export-deployments": "npx hardhat export-deployments",
-    "prepare": "husky install",
-    "prettier:sol": "yarn prettier --write contracts/*",
-    "lint:ts": "eslint '**/*.ts'",
-    "lint:ts:fix": "yarn lint:ts --fix",
-    "lint:ts:prettier": "prettier --write '**/*.ts'",
-    "lint:sol": "solhint -f table contracts/**/*.sol",
-    "lint:sol:prettier": "prettier --write \"contracts/**/*.sol\"",
-    "clean-logs": "yarn run hardhat remove-logs",
-    "coverage": "yarn run hardhat coverage"
-  },
-  "husky": {
-    "hooks": {
-      "pre-commit": "lint-staged"
-    }
-  },
-  "lint-staged": {
-    "contracts/**/*.sol": [
-      "yarn prettier:contracts",
-      "yarn lint:sol",
-      "yarn lint:sol:prettier"
-    ],
-    "test/**": [
-      "yarn lint:test:fix",
-      "yarn lint:test:prettier"
-    ],
-    "scripts/**": [
-      "yarn lint:ts:fix",
-      "yarn lint:ts:prettier"
-    ]
+    "test": "yarn run ts-mocha test/RibbonThetaSTETHVault.ts --timeout 500000 -g '#completeWithdraw'"
   },
   "license": "MIT",
   "dependencies": {

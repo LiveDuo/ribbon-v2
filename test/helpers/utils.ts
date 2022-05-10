@@ -1,9 +1,9 @@
 import { ethers, network, artifacts } from "hardhat";
 import { increaseTo } from "./time";
-import WBTC_ABI from "../../constants/abis/WBTC.json";
-import ORACLE_ABI from "../../constants/abis/OpynOracle.json";
-import CHAINLINK_PRICER_ABI from "../../constants/abis/ChainLinkPricer.json";
-import SAVAX_PRICER_ABI from "../../constants/abis/SAvaxPricer.json";
+import WBTC_ABI from "../../abis/WBTC.json";
+import ORACLE_ABI from "../../abis/OpynOracle.json";
+import CHAINLINK_PRICER_ABI from "../../abis/ChainLinkPricer.json";
+import SAVAX_PRICER_ABI from "../../abis/SAvaxPricer.json";
 import {
   CHAINID,
   OPTION_PROTOCOL,
@@ -29,10 +29,10 @@ import {
   TD_ORACLE_OWNER,
   TD_WHITELIST,
   TD_WHITELIST_OWNER,
-} from "../../constants/constants";
+} from "../constants/constants";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/dist/src/signers";
 import { BigNumber, BigNumberish, Contract } from "ethers";
-import { wmul } from "../helpers/math";
+import { wmul } from "./_math";
 
 const { provider } = ethers;
 const { parseEther } = ethers.utils;
