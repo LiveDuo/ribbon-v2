@@ -47,7 +47,6 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
   let auctionDuration = 21600;
   let deltaStep = BigNumber.from("100");
   let deltaFirstOption = BigNumber.from("1000")
-  let deltaSecondOption = BigNumber.from("1000")
 
   const rollToNextOption = async () => {
     await vault.connect(ownerSigner).commitAndClose();
@@ -64,7 +63,6 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     const expiry = await otoken.expiryTimestamp()
     const collateralPricerSigner = await getAssetPricer(WSTETH_PRICER, ownerSigner);
     await setOpynOracleExpiryPriceYearn(asset, oracle, settlementPrice, collateralPricerSigner, expiry);
-    await strikeSelection.setDelta(deltaSecondOption);
     await vault.connect(ownerSigner).commitAndClose();
     await time.increaseTo((await vault.nextOptionReadyAt()).toNumber() + 1);
     await vault.connect(keeperSigner).rollToNextOption();
@@ -134,7 +132,7 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
 
     // complete withdraw
     const latestTimestamp = (await provider.getBlock("latest")).timestamp;
-    const firstOptionExpiry = moment(latestTimestamp * 1000).startOf("isoWeek").add(chainId === CHAINID.AVAX_MAINNET ? 0 : 1, "weeks").day("friday").hours(8).minutes(0).seconds(0).unix();
+    const firstOptionExpiry = moment(latestTimestamp * 1000).startOf("isoWeek").add(1, "weeks").day("friday").hours(8).minutes(0).seconds(0).unix();
     const [firstOptionStrike] = await strikeSelection.getStrikePrice(firstOptionExpiry, false);
     const settlePriceITM = firstOptionStrike.add(100000000);
     await rollToSecondOption(settlePriceITM);
