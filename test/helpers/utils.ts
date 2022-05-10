@@ -32,7 +32,7 @@ import {
 } from "../constants/constants";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/dist/src/signers";
 import { BigNumber, BigNumberish, Contract } from "ethers";
-import { wmul } from "./_math";
+import { wmul } from "./math";
 
 const { provider } = ethers;
 const { parseEther } = ethers.utils;

@@ -1,6 +1,6 @@
 import { ethers, network } from "hardhat";
 import { expect } from "chai";
-import { BigNumber, BigNumberish, Contract } from "ethers";
+import { BigNumber, Contract } from "ethers";
 import { parseUnits } from "ethers/lib/utils";
 import OptionsPremiumPricerInStables_ABI from "../abis/OptionsPremiumPricerInStables.json";
 import ManualVolOracle_ABI from "../abis/ManualVolOracle.json";
@@ -423,11 +423,7 @@ function behavesLikeRibbonOptionsVault(params: {
           .connect(userSigner)
           .approve(vault.address, params.depositAmount);
 
-        await depositIntoVault(
-          params.depositAsset,
-          vault,
-          params.depositAmount
-        );
+        await vault.depositETH({ value: params.depositAmount });
 
         await assetContract.connect(userSigner).transfer(owner, depositAmount);
         await assetContract
@@ -496,16 +492,4 @@ function behavesLikeRibbonOptionsVault(params: {
 
     });
   });
-}
-
-async function depositIntoVault(
-  asset: string,
-  vault: Contract,
-  amount: BigNumberish,
-  signer?: SignerWithAddress
-) {
-  if (typeof signer !== "undefined") {
-    vault = vault.connect(signer);
-  }
-  await vault.depositETH({ value: amount });
 }
