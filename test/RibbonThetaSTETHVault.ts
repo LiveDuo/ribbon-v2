@@ -12,54 +12,16 @@ import { assert } from "./helpers/assertions";
 
 const { provider, getContractAt, getContractFactory, utils } = ethers;
 
-moment.tz.setDefault("UTC");
+moment.tz.setDefault('UTC');
 
 const DELAY_INCREMENT = 100;
 
 const wethPriceOracleAddress = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
 const wbtcPriceOracleAddress = "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c";
-const usdcPriceOracleAddress = "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6";
-
-const chainId = network.config.chainId;
-
-const testParams = {
-  name: `Ribbon ETH Theta Vault - stETH (Call)`,
-  tokenName: "Ribbon ETH Theta Vault stETH",
-  tokenSymbol: "rSTETH-THETA",
-  asset: WETH_ADDRESS[chainId],
-  assetContractName: "IWETH",
-  collateralContractName: "IWSTETH",
-  strikeAsset: USDC_ADDRESS[chainId],
-  collateralAsset: WSTETH_ADDRESS[chainId],
-  intermediaryAsset: STETH_ADDRESS,
-  depositAsset: WETH_ADDRESS[chainId],
-  collateralPricer: WSTETH_PRICER,
-  underlyingPricer: CHAINLINK_WETH_PRICER_STETH,
-  deltaFirstOption: BigNumber.from("1000"),
-  deltaSecondOption: BigNumber.from("1000"),
-  deltaStep: BigNumber.from("100"),
-  depositAmount: utils.parseEther("1"),
-  minimumSupply: BigNumber.from("10").pow("10").toString(),
-  expectedMintAmount: BigNumber.from("93851929"),
-  premiumDiscount: BigNumber.from("997"),
-  managementFee: BigNumber.from("2000000"),
-  performanceFee: BigNumber.from("20000000"),
-  crvSlippage: BigNumber.from("1"),
-  stETHAmountAfterRounding: BigNumber.from("999746414674411972"),
-  auctionDuration: 21600,
-  tokenDecimals: 18,
-  isPut: false,
-  gasLimits: {
-    depositWorstCase: 173803,
-    depositBestCase: 156881,
-  },
-}
+const usdcPriceOracleAddress = "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6";const chainId = network.config.chainId;
 
 describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
-  behavesLikeRibbonOptionsVault(testParams);
-});
-
-function behavesLikeRibbonOptionsVault(params) {
+  
   // Addresses
   let owner, keeper, user, feeRecipient;
 
@@ -67,21 +29,25 @@ function behavesLikeRibbonOptionsVault(params) {
   let adminSigner, userSigner, ownerSigner, keeperSigner, feeRecipientSigner;
 
   // Parameters
-  let tokenName = params.tokenName;
-  let tokenSymbol = params.tokenSymbol;
-  let tokenDecimals = params.tokenDecimals;
-  let minimumSupply = params.minimumSupply;
-  let asset = params.asset;
-  let depositAsset = params.depositAsset;
-  let collateralAsset = params.collateralAsset;
-  let intermediaryAsset = params.intermediaryAsset;
-  let depositAmount = params.depositAmount;
-  let premiumDiscount = params.premiumDiscount;
-  let managementFee = params.managementFee;
-  let performanceFee = params.performanceFee;
-  let stETHAmountAfterRounding = params.stETHAmountAfterRounding;
-  let auctionDuration = params.auctionDuration;
-  let isPut = params.isPut;
+  let tokenName = "Ribbon ETH Theta Vault stETH";
+  let tokenSymbol = "rSTETH-THETA";
+  let tokenDecimals = 18;
+  let minimumSupply = BigNumber.from("10").pow("10").toString();
+  let chainId = network.config.chainId;
+  let asset = WETH_ADDRESS[chainId];
+  let strikeAsset = USDC_ADDRESS[chainId]
+  let depositAsset = WETH_ADDRESS[chainId];
+  let collateralAsset = WSTETH_ADDRESS[chainId];
+  let intermediaryAsset = STETH_ADDRESS;
+  let depositAmount = utils.parseEther("1");
+  let premiumDiscount = BigNumber.from("997");
+  let managementFee = BigNumber.from("2000000");
+  let performanceFee = BigNumber.from("20000000");
+  let stETHAmountAfterRounding = BigNumber.from("999746414674411972");
+  let auctionDuration = 21600;
+  let deltaStep = BigNumber.from("100");
+  let deltaFirstOption = BigNumber.from("1000")
+  let deltaSecondOption = BigNumber.from("1000")
 
   // Contracts
   let strikeSelection: Contract;
@@ -103,26 +69,26 @@ function behavesLikeRibbonOptionsVault(params) {
     await vault.connect(ownerSigner).commitAndClose();
     const optionState = await vault.optionState();
     await time.increaseTo(optionState.nextOptionReadyAt + DELAY_INCREMENT);
-    await strikeSelection.setDelta(params.deltaFirstOption);
+    await strikeSelection.setDelta(deltaFirstOption);
     await vault.connect(keeperSigner).rollToNextOption();
   };
 
   const rollToSecondOption = async (settlementPrice: BigNumber) => {
     const oracle = await setupOracle(
-      params.asset,
-      params.underlyingPricer,
+      asset,
+      CHAINLINK_WETH_PRICER_STETH,
       ownerSigner,
       OPTION_PROTOCOL.GAMMA
     );
 
     await setOpynOracleExpiryPriceYearn(
-      params.asset,
+      asset,
       oracle,
       settlementPrice,
       collateralPricerSigner,
       await getCurrentOptionExpiry()
     );
-    await strikeSelection.setDelta(params.deltaSecondOption);
+    await strikeSelection.setDelta(deltaSecondOption);
     await vault.connect(ownerSigner).commitAndClose();
     await time.increaseTo((await vault.nextOptionReadyAt()).toNumber() + 1);
     await vault.connect(keeperSigner).rollToNextOption();
@@ -155,19 +121,15 @@ function behavesLikeRibbonOptionsVault(params) {
     keeper = keeperSigner.address;
     feeRecipient = feeRecipientSigner.address;
 
-    const TestVolOracle = await getContractFactory(
-      ManualVolOracle_ABI,
-      ManualVolOracle_BYTECODE,
-      keeperSigner
-    );
+    const TestVolOracle = await getContractFactory(ManualVolOracle_ABI, ManualVolOracle_BYTECODE, keeperSigner);
 
     volOracle = await TestVolOracle.deploy(keeper);
 
     optionId = await volOracle.getOptionId(
-      params.deltaStep,
+      deltaStep,
       asset,
       collateralAsset,
-      isPut
+      false
     );
 
     await volOracle.setAnnualizedVol([optionId], [106480000]);
@@ -181,15 +143,12 @@ function behavesLikeRibbonOptionsVault(params) {
       ownerSigner
     );
 
-    const StrikeSelection = await getContractFactory(
-      "DeltaStrikeSelection",
-      ownerSigner
-    );
+    const StrikeSelection = await getContractFactory("DeltaStrikeSelection", ownerSigner);
 
     optionsPremiumPricer = await OptionsPremiumPricer.deploy(
       optionId,
       volOracle.address,
-      params.asset === WETH_ADDRESS[chainId]
+      asset === WETH_ADDRESS[chainId]
         ? wethPriceOracleAddress
         : wbtcPriceOracleAddress,
       usdcPriceOracleAddress
@@ -197,16 +156,14 @@ function behavesLikeRibbonOptionsVault(params) {
 
     strikeSelection = await StrikeSelection.deploy(
       optionsPremiumPricer.address,
-      params.deltaFirstOption,
-      BigNumber.from(params.deltaStep).mul(10 ** 8)
+      deltaFirstOption,
+      BigNumber.from(deltaStep).mul(10 ** 8)
     );
 
     const VaultLifecycle = await ethers.getContractFactory("VaultLifecycle");
     vaultLifecycleLib = await VaultLifecycle.deploy();
 
-    const VaultLifecycleSTETH = await ethers.getContractFactory(
-      "VaultLifecycleSTETH"
-    );
+    const VaultLifecycleSTETH = await ethers.getContractFactory("VaultLifecycleSTETH");
     vaultLifecycleSTETHLib = await VaultLifecycleSTETH.deploy();
 
     const initializeArgs = [
@@ -222,9 +179,9 @@ function behavesLikeRibbonOptionsVault(params) {
       premiumDiscount,
       auctionDuration,
       [
-        isPut,
+        false,
         tokenDecimals,
-        isPut ? USDC_ADDRESS[chainId] : asset,
+        false ? USDC_ADDRESS[chainId] : asset,
         asset,
         minimumSupply,
         utils.parseEther("500"),
@@ -259,10 +216,10 @@ function behavesLikeRibbonOptionsVault(params) {
     ).connect(userSigner);
 
     await whitelistProduct(
-      params.asset,
-      params.strikeAsset,
-      params.collateralAsset,
-      params.isPut,
+      asset,
+      strikeAsset,
+      collateralAsset,
+      false,
       OPTION_PROTOCOL.GAMMA
     );
 
@@ -278,70 +235,32 @@ function behavesLikeRibbonOptionsVault(params) {
       .seconds(0)
       .unix();
 
-    [firstOptionStrike] = await strikeSelection.getStrikePrice(
-      firstOptionExpiry,
-      params.isPut
-    );
+    [firstOptionStrike] = await strikeSelection.getStrikePrice(firstOptionExpiry, false);
 
-    await strikeSelection.setDelta(params.deltaFirstOption);
+    await strikeSelection.setDelta(deltaFirstOption);
 
     await vault.initRounds(50);
 
-    assetContract = await getContractAt(
-      params.assetContractName,
-      depositAsset
-    );
+    assetContract = await getContractAt("IWETH", depositAsset);
 
-    intermediaryAssetContract = await getContractAt(
-      "IERC20",
-      intermediaryAsset
-    );
+    intermediaryAssetContract = await getContractAt("IERC20", intermediaryAsset);
 
-    await setAssetPricer(
-      collateralAsset,
-      params.collateralPricer,
-      OPTION_PROTOCOL.GAMMA
-    );
+    await setAssetPricer(collateralAsset, WSTETH_PRICER, OPTION_PROTOCOL.GAMMA);
 
-    collateralPricerSigner = await getAssetPricer(
-      params.collateralPricer,
-      ownerSigner
-    );
+    collateralPricerSigner = await getAssetPricer(WSTETH_PRICER, ownerSigner);
 
-    // If mintable token, then mine the token
-    if (params.mintConfig) {
-      const addressToDeposit = [userSigner, ownerSigner, adminSigner];
+    await assetContract.connect(userSigner).deposit({ value: utils.parseEther("100") });
 
-      for (let i = 0; i < addressToDeposit.length; i++) {
-        await mintToken(
-          assetContract,
-          params.mintConfig.contractOwnerAddress,
-          addressToDeposit[i].address,
-          vault.address,
-          params.depositAsset === USDC_ADDRESS[chainId]
-            ? BigNumber.from("10000000000000")
-            : utils.parseEther("200")
-        );
-      }
-    } else if (params.asset === WETH_ADDRESS[chainId]) {
-      await assetContract
-        .connect(userSigner)
-        .deposit({ value: utils.parseEther("100") });
-    }
   });
 
   it("completes the withdrawal", async function () {
 
-    await assetContract
-      .connect(userSigner)
-      .approve(vault.address, params.depositAmount);
+    await assetContract.connect(userSigner).approve(vault.address, depositAmount);
 
-    await vault.depositETH({ value: params.depositAmount });
+    await vault.depositETH({ value: depositAmount });
 
     await assetContract.connect(userSigner).transfer(owner, depositAmount);
-    await assetContract
-      .connect(ownerSigner)
-      .approve(vault.address, depositAmount);
+    await assetContract.connect(ownerSigner).approve(vault.address, depositAmount);
     await vault.connect(ownerSigner).depositETH({ value: depositAmount });
 
     await rollToNextOption();
@@ -349,19 +268,15 @@ function behavesLikeRibbonOptionsVault(params) {
     await vault.initiateWithdraw(depositAmount);
 
     const firstStrikePrice = firstOptionStrike;
-    const settlePriceITM = isPut
-      ? firstStrikePrice.sub(100000000)
-      : firstStrikePrice.add(100000000);
+    const settlePriceITM = false ? firstStrikePrice.sub(100000000) : firstStrikePrice.add(100000000);
 
     await rollToSecondOption(settlePriceITM);
 
     const lastQueuedWithdrawAmount = await vault.lastQueuedWithdrawAmount();
 
-    const beforeBalance: BigNumber =
-      await intermediaryAssetContract.balanceOf(user);
+    const beforeBalance: BigNumber = await intermediaryAssetContract.balanceOf(user);
 
-    const { queuedWithdrawShares: startQueuedShares } =
-      await vault.vaultState();
+    const { queuedWithdrawShares: startQueuedShares } = await vault.vaultState();
 
     const tx = await vault.completeWithdraw({ gasPrice: parseUnits("30", "gwei") });
 
@@ -381,8 +296,7 @@ function behavesLikeRibbonOptionsVault(params) {
     assert.equal(shares, 0);
     assert.equal(round, 2);
 
-    const { queuedWithdrawShares: endQueuedShares } =
-      await vault.vaultState();
+    const { queuedWithdrawShares: endQueuedShares } = await vault.vaultState();
 
     assert.bnEqual(endQueuedShares, BigNumber.from(0));
     assert.bnEqual(
@@ -400,4 +314,4 @@ function behavesLikeRibbonOptionsVault(params) {
     assert.bnGte(actualWithdrawAmount.add(5), stETHAmountAfterRounding);
     assert.bnLte(actualWithdrawAmount, stETHAmountAfterRounding.add(5));
   });
-}
+});
