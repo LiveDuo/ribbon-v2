@@ -1,12 +1,11 @@
 import { ethers, network } from "hardhat";
-import { expect } from "chai";
 
 import OptionsPremiumPricerInStables_ABI from "../abis/OptionsPremiumPricerInStables.json";
 import ManualVolOracle_ABI from "../abis/ManualVolOracle.json";
 
-import { BLOCK_NUMBER, OPTION_PROTOCOL, CHAINLINK_WETH_PRICER_STETH, GAMMA_CONTROLLER, MARGIN_POOL, OTOKEN_FACTORY, USDC_ADDRESS, STETH_ADDRESS, WSTETH_ADDRESS, LDO_ADDRESS, STETH_ETH_CRV_POOL, WETH_ADDRESS, GNOSIS_EASY_AUCTION, WSTETH_PRICER, OptionsPremiumPricerInStables_BYTECODE, ManualVolOracle_BYTECODE, CHAINID, } from "./constants/constants";
+import { OPTION_PROTOCOL, CHAINLINK_WETH_PRICER_STETH, GAMMA_CONTROLLER, MARGIN_POOL, OTOKEN_FACTORY, USDC_ADDRESS, STETH_ADDRESS, WSTETH_ADDRESS, LDO_ADDRESS, STETH_ETH_CRV_POOL, WETH_ADDRESS, GNOSIS_EASY_AUCTION, WSTETH_PRICER, OptionsPremiumPricerInStables_BYTECODE, ManualVolOracle_BYTECODE, CHAINID, } from "./constants/constants";
 
-import { deployProxy, setupOracle, setOpynOracleExpiryPriceYearn, setAssetPricer, getAssetPricer, whitelistProduct } from "./helpers/utils";
+import { deployProxy, setupOracle, setOpynOracleExpiryPriceYearn, getAssetPricer, whitelistProduct } from "./helpers/utils";
 import * as time from "./helpers/time";
 import { assert } from "./helpers/assertions";
 
@@ -17,15 +16,11 @@ moment.tz.setDefault('UTC');
 const { provider, getContractAt, getContractFactory, BigNumber, utils } = ethers;
 
 const wethPriceOracleAddress = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
-const wbtcPriceOracleAddress = "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c";
 const usdcPriceOracleAddress = "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6";
 
 const DELAY_INCREMENT = 100;
 
 describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
-  
-  // Addresses
-  let owner, keeper, user, feeRecipient;
 
   // Signers
   let adminSigner, userSigner, ownerSigner, keeperSigner, feeRecipientSigner;
@@ -53,19 +48,10 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
 
   // Contracts
   let strikeSelection;
-  let volOracle;
   let optionsPremiumPricer;
-  let vaultLifecycleSTETHLib;
-  let vaultLifecycleLib;
-  let vault;
-  let assetContract;
   let intermediaryAssetContract;
-  let collateralPricerSigner;
-
-  // Variables
-  let firstOptionStrike;
-  let firstOptionExpiry;
-  let optionId;
+  let assetContract;
+  let vault;
 
   const rollToNextOption = async () => {
     await vault.connect(ownerSigner).commitAndClose();
@@ -76,20 +62,10 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
   };
 
   const rollToSecondOption = async (settlementPrice) => {
-    const oracle = await setupOracle(
-      asset,
-      CHAINLINK_WETH_PRICER_STETH,
-      ownerSigner,
-      OPTION_PROTOCOL.GAMMA
-    );
-
-    await setOpynOracleExpiryPriceYearn(
-      asset,
-      oracle,
-      settlementPrice,
-      collateralPricerSigner,
-      await getCurrentOptionExpiry()
-    );
+    const oracle = await setupOracle(asset, CHAINLINK_WETH_PRICER_STETH, ownerSigner, OPTION_PROTOCOL.GAMMA);
+    const expiry = await getCurrentOptionExpiry()
+    const collateralPricerSigner = await getAssetPricer(WSTETH_PRICER, ownerSigner);
+    await setOpynOracleExpiryPriceYearn(asset, oracle, settlementPrice, collateralPricerSigner, expiry);
     await strikeSelection.setDelta(deltaSecondOption);
     await vault.connect(ownerSigner).commitAndClose();
     await time.increaseTo((await vault.nextOptionReadyAt()).toNumber() + 1);
@@ -103,216 +79,93 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
   };
 
   before(async function () {
-    // Reset block
-    await network.provider.request({
-      method: "hardhat_reset",
-      params: [
-        {
-          forking: {
-            jsonRpcUrl: process.env.TEST_URI,
-            blockNumber: BLOCK_NUMBER[chainId],
-          },
-        },
-      ],
-    });
 
-    [adminSigner, ownerSigner, keeperSigner, userSigner, feeRecipientSigner] =
-      await ethers.getSigners();
-    owner = ownerSigner.address;
-    user = userSigner.address;
-    keeper = keeperSigner.address;
-    feeRecipient = feeRecipientSigner.address;
+    [adminSigner, ownerSigner, keeperSigner, userSigner, feeRecipientSigner] = await ethers.getSigners();
 
+    // setup oracle
     const TestVolOracle = await getContractFactory(ManualVolOracle_ABI, ManualVolOracle_BYTECODE, keeperSigner);
-
-    volOracle = await TestVolOracle.deploy(keeper);
-
-    optionId = await volOracle.getOptionId(
-      deltaStep,
-      asset,
-      collateralAsset,
-      false
-    );
-
+    const volOracle = await TestVolOracle.deploy(keeperSigner.address);
+    const optionId = await volOracle.getOptionId(deltaStep, asset, collateralAsset, false);
     await volOracle.setAnnualizedVol([optionId], [106480000]);
 
+    // increase timestamp
     const topOfPeriod = (await time.getTopOfPeriod()) + time.PERIOD;
     await time.increaseTo(topOfPeriod);
 
-    const OptionsPremiumPricer = await getContractFactory(
-      OptionsPremiumPricerInStables_ABI,
-      OptionsPremiumPricerInStables_BYTECODE,
-      ownerSigner
-    );
+    // setup pricer
+    const OptionsPremiumPricer = await getContractFactory(OptionsPremiumPricerInStables_ABI, OptionsPremiumPricerInStables_BYTECODE, ownerSigner);
+    optionsPremiumPricer = await OptionsPremiumPricer.deploy(optionId, volOracle.address, wethPriceOracleAddress, usdcPriceOracleAddress);
 
+    // setup strike selection
     const StrikeSelection = await getContractFactory("DeltaStrikeSelection", ownerSigner);
+    strikeSelection = await StrikeSelection.deploy(optionsPremiumPricer.address, deltaFirstOption, BigNumber.from(deltaStep).mul(10 ** 8));
 
-    optionsPremiumPricer = await OptionsPremiumPricer.deploy(
-      optionId,
-      volOracle.address,
-      asset === WETH_ADDRESS[chainId]
-        ? wethPriceOracleAddress
-        : wbtcPriceOracleAddress,
-      usdcPriceOracleAddress
-    );
-
-    strikeSelection = await StrikeSelection.deploy(
-      optionsPremiumPricer.address,
-      deltaFirstOption,
-      BigNumber.from(deltaStep).mul(10 ** 8)
-    );
-
+    // get libraries
     const VaultLifecycle = await ethers.getContractFactory("VaultLifecycle");
-    vaultLifecycleLib = await VaultLifecycle.deploy();
-
+    const vaultLifecycleLib = await VaultLifecycle.deploy();
     const VaultLifecycleSTETH = await ethers.getContractFactory("VaultLifecycleSTETH");
-    vaultLifecycleSTETHLib = await VaultLifecycleSTETH.deploy();
+    const vaultLifecycleSTETHLib = await VaultLifecycleSTETH.deploy();
 
-    const initializeArgs = [
-      owner,
-      keeper,
-      feeRecipient,
-      managementFee,
-      performanceFee,
-      tokenName,
-      tokenSymbol,
-      optionsPremiumPricer.address,
-      strikeSelection.address,
-      premiumDiscount,
-      auctionDuration,
-      [
-        false,
-        tokenDecimals,
-        false ? USDC_ADDRESS[chainId] : asset,
-        asset,
-        minimumSupply,
-        utils.parseEther("500"),
-      ],
-    ];
-
-    const deployArgs = [
-      WETH_ADDRESS[chainId],
-      USDC_ADDRESS[chainId],
-      WSTETH_ADDRESS[chainId],
-      LDO_ADDRESS,
-      OTOKEN_FACTORY[chainId],
-      GAMMA_CONTROLLER[chainId],
-      MARGIN_POOL[chainId],
-      GNOSIS_EASY_AUCTION[chainId],
-      STETH_ETH_CRV_POOL,
-    ];
-
+    // deploy contract
+    const options =[false, tokenDecimals, asset, asset, minimumSupply, utils.parseEther("500")];
+    const initializeArgs = [ ownerSigner.address, keeperSigner.address, feeRecipientSigner.address, managementFee, performanceFee, 
+      tokenName, tokenSymbol, optionsPremiumPricer.address, strikeSelection.address, premiumDiscount, auctionDuration, options];
+    const deployArgs = [WETH_ADDRESS[chainId], USDC_ADDRESS[chainId], WSTETH_ADDRESS[chainId], LDO_ADDRESS, 
+      OTOKEN_FACTORY[chainId], GAMMA_CONTROLLER[chainId], MARGIN_POOL[chainId], GNOSIS_EASY_AUCTION[chainId], STETH_ETH_CRV_POOL];
+    const libs = { VaultLifecycle: vaultLifecycleLib.address, VaultLifecycleSTETH: vaultLifecycleSTETHLib.address };
     vault = (
-      await deployProxy(
-        "RibbonThetaSTETHVault",
-        adminSigner,
-        initializeArgs,
-        deployArgs,
-        {
-          libraries: {
-            VaultLifecycle: vaultLifecycleLib.address,
-            VaultLifecycleSTETH: vaultLifecycleSTETHLib.address,
-          },
-        }
-      )
+      await deployProxy("RibbonThetaSTETHVault", adminSigner, initializeArgs, deployArgs, { libraries: libs })
     ).connect(userSigner);
 
-    await whitelistProduct(
-      asset,
-      strikeAsset,
-      collateralAsset,
-      false,
-      OPTION_PROTOCOL.GAMMA
-    );
+    // whitelist product
+    await whitelistProduct(asset, strikeAsset, collateralAsset, false, OPTION_PROTOCOL.GAMMA);
 
-    const latestTimestamp = (await provider.getBlock("latest")).timestamp;
-
-    // Create first option
-    firstOptionExpiry = moment(latestTimestamp * 1000)
-      .startOf("isoWeek")
-      .add(chainId === CHAINID.AVAX_MAINNET ? 0 : 1, "weeks")
-      .day("friday")
-      .hours(8)
-      .minutes(0)
-      .seconds(0)
-      .unix();
-
-    [firstOptionStrike] = await strikeSelection.getStrikePrice(firstOptionExpiry, false);
-
-    await strikeSelection.setDelta(deltaFirstOption);
-
-    await vault.initRounds(50);
-
+    // setup assets contracts
     assetContract = await getContractAt("IWETH", depositAsset);
-
-    intermediaryAssetContract = await getContractAt("IERC20", intermediaryAsset);
-
-    await setAssetPricer(collateralAsset, WSTETH_PRICER, OPTION_PROTOCOL.GAMMA);
-
-    collateralPricerSigner = await getAssetPricer(WSTETH_PRICER, ownerSigner);
-
     await assetContract.connect(userSigner).deposit({ value: utils.parseEther("100") });
+    intermediaryAssetContract = await getContractAt("IERC20", intermediaryAsset);
 
   });
 
   it("completes the withdrawal", async function () {
 
+    // deposit eth
     await assetContract.connect(userSigner).approve(vault.address, depositAmount);
-
     await vault.depositETH({ value: depositAmount });
-
-    await assetContract.connect(userSigner).transfer(owner, depositAmount);
+    await assetContract.connect(userSigner).transfer(ownerSigner.address, depositAmount);
     await assetContract.connect(ownerSigner).approve(vault.address, depositAmount);
     await vault.connect(ownerSigner).depositETH({ value: depositAmount });
 
+    // initialize withdraw
     await rollToNextOption();
-
     await vault.initiateWithdraw(depositAmount);
 
-    const firstStrikePrice = firstOptionStrike;
-    const settlePriceITM = false ? firstStrikePrice.sub(100000000) : firstStrikePrice.add(100000000);
-
+    // complete withdraw
+    const latestTimestamp = (await provider.getBlock("latest")).timestamp;
+    const firstOptionExpiry = moment(latestTimestamp * 1000).startOf("isoWeek").add(chainId === CHAINID.AVAX_MAINNET ? 0 : 1, "weeks").day("friday").hours(8).minutes(0).seconds(0).unix();
+    const [firstOptionStrike] = await strikeSelection.getStrikePrice(firstOptionExpiry, false);
+    const settlePriceITM = false ? firstOptionStrike.sub(100000000) : firstOptionStrike.add(100000000);
     await rollToSecondOption(settlePriceITM);
-
     const lastQueuedWithdrawAmount = await vault.lastQueuedWithdrawAmount();
-
-    const beforeBalance = await intermediaryAssetContract.balanceOf(user);
-
+    const beforeBalance = await intermediaryAssetContract.balanceOf(userSigner.address);
     const { queuedWithdrawShares: startQueuedShares } = await vault.vaultState();
+    await vault.completeWithdraw({ gasPrice: utils.parseUnits("30", "gwei") });
 
-    const tx = await vault.completeWithdraw({ gasPrice: utils.parseUnits("30", "gwei") });
-
-    await expect(tx)
-      .to.emit(vault, "Withdraw")
-      .withArgs(user, stETHAmountAfterRounding.toString(), depositAmount);
-
-    if (depositAsset !== WETH_ADDRESS[chainId]) {
-      const collateralERC20 = await getContractAt("IERC20", depositAsset);
-
-      await expect(tx)
-        .to.emit(collateralERC20, "Transfer")
-        .withArgs(vault.address, user, stETHAmountAfterRounding);
-    }
-
-    const { shares, round } = await vault.withdrawals(user);
+    // check withdrawals
+    const { shares, round } = await vault.withdrawals(userSigner.address);
     assert.equal(shares, 0);
     assert.equal(round, 2);
 
+    // check shares
     const { queuedWithdrawShares: endQueuedShares } = await vault.vaultState();
-
     assert.bnEqual(endQueuedShares, BigNumber.from(0));
-    assert.bnEqual(
-      await vault.lastQueuedWithdrawAmount(),
-      lastQueuedWithdrawAmount.sub(stETHAmountAfterRounding)
-    );
+    assert.bnEqual(await vault.lastQueuedWithdrawAmount(), lastQueuedWithdrawAmount.sub(stETHAmountAfterRounding));
     assert.bnEqual(startQueuedShares.sub(endQueuedShares), depositAmount);
 
-    const afterBalance = await intermediaryAssetContract.balanceOf(user);
+    // check balance and withdraw amount
+    const afterBalance = await intermediaryAssetContract.balanceOf(userSigner.address);
     const actualWithdrawAmount = afterBalance.sub(beforeBalance);
-
-    // Should be less because the pps is down
     assert.bnLt(actualWithdrawAmount, depositAmount);
-    // Account for rounding when minting stETH
     assert.bnGte(actualWithdrawAmount.add(5), stETHAmountAfterRounding);
     assert.bnLte(actualWithdrawAmount, stETHAmountAfterRounding.add(5));
   });
