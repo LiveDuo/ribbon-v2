@@ -50,22 +50,18 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
 
   const rollToNextOption = async () => {
     await vault.connect(ownerSigner).commitAndClose();
-    const optionState = await vault.optionState();
-    await time.increaseTo(optionState.nextOptionReadyAt + DELAY_INCREMENT);
-    await strikeSelection.setDelta(deltaFirstOption);
+    const nextOptionReadyAt = await vault.optionState().then(o => o.nextOptionReadyAt);
+    await time.increaseTo(nextOptionReadyAt + DELAY_INCREMENT);
     await vault.connect(keeperSigner).rollToNextOption();
   };
 
-  const rollToSecondOption = async (settlementPrice) => {
+  const setOpynExpiryPrice = async (settlementPrice) => {
     const oracle = await setupOracle(asset, CHAINLINK_WETH_PRICER_STETH, ownerSigner, OPTION_PROTOCOL.GAMMA);
     const currentOption = await vault.currentOption();
     const otoken = await getContractAt("IOtoken", currentOption);
     const expiry = await otoken.expiryTimestamp()
     const collateralPricerSigner = await getAssetPricer(WSTETH_PRICER, ownerSigner);
     await setOpynOracleExpiryPriceYearn(asset, oracle, settlementPrice, collateralPricerSigner, expiry);
-    await vault.connect(ownerSigner).commitAndClose();
-    await time.increaseTo((await vault.nextOptionReadyAt()).toNumber() + 1);
-    await vault.connect(keeperSigner).rollToNextOption();
   };
 
   before(async function () {
@@ -134,14 +130,13 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     const latestTimestamp = (await provider.getBlock("latest")).timestamp;
     const firstOptionExpiry = moment(latestTimestamp * 1000).startOf("isoWeek").add(1, "weeks").day("friday").hours(8).minutes(0).seconds(0).unix();
     const [firstOptionStrike] = await strikeSelection.getStrikePrice(firstOptionExpiry, false);
-    const settlePriceITM = firstOptionStrike.add(100000000);
-    await rollToSecondOption(settlePriceITM);
+    await setOpynExpiryPrice(firstOptionStrike.add(100000000));
+    await rollToNextOption()
     const beforeBalance = await intermediaryAssetContract.balanceOf(userSigner.address);
     await vault.completeWithdraw({ gasPrice: utils.parseUnits("30", "gwei") });
 
     // check withdrawals
-    const { shares, round } = await vault.withdrawals(userSigner.address);
-    assert.equal(shares, 0);
+    const { round } = await vault.withdrawals(userSigner.address);
     assert.equal(round, 2);
 
     // check balance and withdraw amount
