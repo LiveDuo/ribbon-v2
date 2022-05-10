@@ -1,24 +1,26 @@
 import { ethers, network } from "hardhat";
 import { expect } from "chai";
-import { BigNumber, Contract } from "ethers";
-import { parseUnits } from "ethers/lib/utils";
+
 import OptionsPremiumPricerInStables_ABI from "../abis/OptionsPremiumPricerInStables.json";
 import ManualVolOracle_ABI from "../abis/ManualVolOracle.json";
-import moment from "moment-timezone";
-import * as time from "./helpers/time";
+
 import { BLOCK_NUMBER, OPTION_PROTOCOL, CHAINLINK_WETH_PRICER_STETH, GAMMA_CONTROLLER, MARGIN_POOL, OTOKEN_FACTORY, USDC_ADDRESS, STETH_ADDRESS, WSTETH_ADDRESS, LDO_ADDRESS, STETH_ETH_CRV_POOL, WETH_ADDRESS, GNOSIS_EASY_AUCTION, WSTETH_PRICER, OptionsPremiumPricerInStables_BYTECODE, ManualVolOracle_BYTECODE, CHAINID, } from "./constants/constants";
-import { deployProxy, setupOracle, setOpynOracleExpiryPriceYearn, setAssetPricer, getAssetPricer, whitelistProduct, mintToken } from "./helpers/utils";
+
+import { deployProxy, setupOracle, setOpynOracleExpiryPriceYearn, setAssetPricer, getAssetPricer, whitelistProduct } from "./helpers/utils";
+import * as time from "./helpers/time";
 import { assert } from "./helpers/assertions";
 
-const { provider, getContractAt, getContractFactory, utils } = ethers;
+import moment from "moment-timezone";
 
 moment.tz.setDefault('UTC');
 
-const DELAY_INCREMENT = 100;
+const { provider, getContractAt, getContractFactory, BigNumber, utils } = ethers;
 
 const wethPriceOracleAddress = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
 const wbtcPriceOracleAddress = "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c";
-const usdcPriceOracleAddress = "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6";const chainId = network.config.chainId;
+const usdcPriceOracleAddress = "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6";
+
+const DELAY_INCREMENT = 100;
 
 describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
   
@@ -50,20 +52,20 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
   let deltaSecondOption = BigNumber.from("1000")
 
   // Contracts
-  let strikeSelection: Contract;
-  let volOracle: Contract;
-  let optionsPremiumPricer: Contract;
-  let vaultLifecycleSTETHLib: Contract;
-  let vaultLifecycleLib: Contract;
-  let vault: Contract;
-  let assetContract: Contract;
-  let intermediaryAssetContract: Contract;
-  let collateralPricerSigner: Contract;
+  let strikeSelection;
+  let volOracle;
+  let optionsPremiumPricer;
+  let vaultLifecycleSTETHLib;
+  let vaultLifecycleLib;
+  let vault;
+  let assetContract;
+  let intermediaryAssetContract;
+  let collateralPricerSigner;
 
   // Variables
-  let firstOptionStrike: BigNumber;
-  let firstOptionExpiry: number;
-  let optionId: string;
+  let firstOptionStrike;
+  let firstOptionExpiry;
+  let optionId;
 
   const rollToNextOption = async () => {
     await vault.connect(ownerSigner).commitAndClose();
@@ -73,7 +75,7 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     await vault.connect(keeperSigner).rollToNextOption();
   };
 
-  const rollToSecondOption = async (settlementPrice: BigNumber) => {
+  const rollToSecondOption = async (settlementPrice) => {
     const oracle = await setupOracle(
       asset,
       CHAINLINK_WETH_PRICER_STETH,
@@ -274,11 +276,11 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
 
     const lastQueuedWithdrawAmount = await vault.lastQueuedWithdrawAmount();
 
-    const beforeBalance: BigNumber = await intermediaryAssetContract.balanceOf(user);
+    const beforeBalance = await intermediaryAssetContract.balanceOf(user);
 
     const { queuedWithdrawShares: startQueuedShares } = await vault.vaultState();
 
-    const tx = await vault.completeWithdraw({ gasPrice: parseUnits("30", "gwei") });
+    const tx = await vault.completeWithdraw({ gasPrice: utils.parseUnits("30", "gwei") });
 
     await expect(tx)
       .to.emit(vault, "Withdraw")
@@ -306,7 +308,7 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     assert.bnEqual(startQueuedShares.sub(endQueuedShares), depositAmount);
 
     const afterBalance = await intermediaryAssetContract.balanceOf(user);
-    const actualWithdrawAmount: BigNumber = afterBalance.sub(beforeBalance);
+    const actualWithdrawAmount = afterBalance.sub(beforeBalance);
 
     // Should be less because the pps is down
     assert.bnLt(actualWithdrawAmount, depositAmount);
