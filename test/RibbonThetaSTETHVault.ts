@@ -1,11 +1,11 @@
-import { ethers } from "hardhat";
+import { ethers, network } from "hardhat";
 
 import OptionsPremiumPricerInStables_ABI from "../abis/OptionsPremiumPricerInStables.json";
 import ManualVolOracle_ABI from "../abis/ManualVolOracle.json";
+import ORACLE_ABI from "../abis/OpynOracle.json";
 
 import { OptionsPremiumPricerInStables_BYTECODE, ManualVolOracle_BYTECODE } from "./helpers/constants";
 
-import { deployProxy, setupOracle, setOpynOracleExpiryPriceYearn, getAssetPricer } from "./helpers/utils";
 import { assert } from "chai";
 
 import moment from "moment-timezone";
@@ -26,52 +26,84 @@ const USDC_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const CHAINLINK_WETH_PRICER_STETH = "0x128cE9B4D97A6550905dE7d9Abc2b8C747b0996C";
 const WETH_PRICE_ORACLE_ADDRESS = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
 const USDC_PRICE_ORACLE_ADDRESS = "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6";
+const YEARN_PRICER_OWNER = "0xfacb407914655562d6619b0048a612B1795dF783";
+const GAMMA_ORACLE = "0x789cD7AB3742e23Ce0952F6Bc3Eb3A73A0E08833"
 
+const ORACLE_OWNER = "0x2FCb2fc8dD68c48F406825255B4446EDFbD3e140"
+
+const ORACLE_LOCKING_PERIOD = 300;
+const ORACLE_DISPUTE_PERIOD = 7200;
 const DELAY_INCREMENT = 100;
 const PERIOD = 12 * 60 * 60; // 12 hours
 
-const getTopOfPeriod = async () => {
-  const latestTimestamp = (await ethers.provider.getBlock("latest")).timestamp;
-  let topOfPeriod: number;
+const setupOracle = async (assetAddr, chainlinkPricer, signer) => {
+  await network.provider.request({ method: "hardhat_impersonateAccount", params: [chainlinkPricer] });
+  await network.provider.request({ method: "hardhat_impersonateAccount", params: [ORACLE_OWNER] });
+  const oracleOwnerSigner = await ethers.provider.getSigner(ORACLE_OWNER);
 
-  const rem = latestTimestamp % PERIOD;
-  if (rem < Math.floor(PERIOD / 2)) {
-    topOfPeriod = latestTimestamp - rem + PERIOD;
-  } else {
-    topOfPeriod = latestTimestamp + rem + PERIOD;
-  }
-  return topOfPeriod;
+  const pricerSigner = await ethers.provider.getSigner(chainlinkPricer);
+  const forceSendContract = await ethers.getContractFactory("ForceSend");
+  const forceSend = await forceSendContract.deploy(); // force Send is a contract that forces the sending of Ether to WBTC minter (which is a contract with no receive() function)
+  await forceSend.connect(signer).go(chainlinkPricer, { value: ethers.utils.parseEther("1") });
+
+  const oracle = new ethers.Contract(GAMMA_ORACLE, ORACLE_ABI, pricerSigner);
+  await signer.sendTransaction({ to: ORACLE_OWNER, value: ethers.utils.parseEther("1"), });
+
+  await oracle.connect(oracleOwnerSigner).setStablePrice(USDC_ADDRESS, "100000000");
+  await oracle.connect(oracleOwnerSigner).setAssetPricer(assetAddr, chainlinkPricer);
+
+  return oracle;
 }
 
-const increase = async (duration) => {
-  if (!ethers.BigNumber.isBigNumber(duration)) {
-    duration = ethers.BigNumber.from(duration);
-  }
+const setOpynOracleExpiryPriceYearn = async (underlyingAsset, underlyingOracle, underlyingSettlePrice, collateralPricer, expiry) => {
+  await increaseTo(expiry.toNumber() + ORACLE_LOCKING_PERIOD + 1);
 
-  if (duration.lt(ethers.BigNumber.from("0")))
-    throw Error(`Cannot increase time by a negative amount (${duration})`);
+  const res = await underlyingOracle.setExpiryPrice(underlyingAsset, expiry, underlyingSettlePrice);
+  await res.wait();
+  await network.provider.request({ method: "hardhat_impersonateAccount", params: [YEARN_PRICER_OWNER], });
+
+  const oracleOwnerSigner = await ethers.provider.getSigner(YEARN_PRICER_OWNER);
+  const res2 = await collateralPricer.connect(oracleOwnerSigner).setExpiryPriceInOracle(expiry);
+  const receipt = await res2.wait();
+
+  const timestamp = (await ethers.provider.getBlock(receipt.blockNumber)).timestamp;
+  await increaseTo(timestamp + ORACLE_DISPUTE_PERIOD + 1);
+}
+
+const getAssetPricer = async (pricer, signer) => {
+  await network.provider.request({ method: "hardhat_impersonateAccount", params: [pricer] });
+  const ownerSigner = await ethers.provider.getSigner(pricer);
+  const pricerContract = await ethers.getContractAt("IYearnPricer", pricer);
+  const forceSendContract = await ethers.getContractFactory("ForceSend");
+  const forceSend = await forceSendContract.deploy(); // forces the sending of Ether to WBTC minter
+  await forceSend.connect(signer).go(pricer, { value: ethers.utils.parseEther("0.5") });
+  return await pricerContract.connect(ownerSigner);
+}
+
+const deployProxy = async (logicContractName, adminSigner, initializeArgs, logicDeployParams, factoryOptions) => {
+  const AdminUpgradeabilityProxy = await ethers.getContractFactory("AdminUpgradeabilityProxy", adminSigner);
+  const LogicContract = await ethers.getContractFactory(logicContractName, factoryOptions);
+  const logic = await LogicContract.deploy(...logicDeployParams);
+  const initBytes = LogicContract.interface.encodeFunctionData("initialize", initializeArgs);
+  const proxy = await AdminUpgradeabilityProxy.deploy(logic.address, await adminSigner.getAddress(), initBytes);
+  return await ethers.getContractAt(logicContractName, proxy.address);
+}
+
+const getTopOfPeriod = async () => {
+  const latestBlock = await ethers.provider.getBlock("latest")
+  const remainder = latestBlock.timestamp % PERIOD;
+  const duration = (remainder < Math.floor(PERIOD / 2) ? -1 : 1) * (remainder) + 2 * PERIOD
+  return latestBlock.timestamp + duration;
+}
+
+const increaseTo = async (amount) => {
+  const target = ethers.BigNumber.from(amount);
+  const timestamp = await ethers.provider.getBlock("latest").then(r => r.timestamp)
+  const now = ethers.BigNumber.from(timestamp);
+  const duration = ethers.BigNumber.from(target.sub(now));
 
   await ethers.provider.send("evm_increaseTime", [duration.toNumber()]);
-
   await ethers.provider.send("evm_mine", []);
-}
-
-const increaseTo = async (target) => {
-  if (!ethers.BigNumber.isBigNumber(target)) {
-    target = ethers.BigNumber.from(target);
-  }
-
-  const now = ethers.BigNumber.from(
-    (await ethers.provider.getBlock("latest")).timestamp
-  );
-
-  if (target.lt(now))
-    throw Error(
-      `Cannot increase current time (${now}) to a moment in the past (${target})`
-    );
-
-  const diff = target.sub(now);
-  return increase(diff);
 }
 
 describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
@@ -90,7 +122,7 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
   };
 
   const setOpynExpiryPrice = async (settlementPrice, ownerSigner) => {
-    const oracle = await setupOracle(asset, CHAINLINK_WETH_PRICER_STETH, ownerSigner, 1);
+    const oracle = await setupOracle(asset, CHAINLINK_WETH_PRICER_STETH, ownerSigner);
     const currentOption = await vault.currentOption();
     const otoken = await ethers.getContractAt("IOtoken", currentOption);
     const expiry = await otoken.expiryTimestamp()
@@ -151,7 +183,7 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     await vault.connect(ownerSigner).depositETH({ value: depositAmount });
 
     // initialize withdraw
-    const topOfPeriod = await getTopOfPeriod().then(p => p + PERIOD);
+    const topOfPeriod = await getTopOfPeriod();
     await increaseTo(topOfPeriod);
     await rollToNextOption(ownerSigner, keeperSigner);
     await vault.initiateWithdraw(depositAmount);
