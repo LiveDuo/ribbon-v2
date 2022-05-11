@@ -43,9 +43,9 @@ const getTopOfPeriod = async () => {
     topOfPeriod = latestTimestamp + rem + PERIOD;
   }
   return topOfPeriod;
-};
+}
 
-async function increase(duration) {
+const increase = async (duration) => {
   if (!BigNumber.isBigNumber(duration)) {
     duration = BigNumber.from(duration);
   }
@@ -58,7 +58,7 @@ async function increase(duration) {
   await ethers.provider.send("evm_mine", []);
 }
 
-async function increaseTo(target) {
+const increaseTo = async (target) => {
   if (!BigNumber.isBigNumber(target)) {
     target = BigNumber.from(target);
   }
@@ -78,23 +78,20 @@ async function increaseTo(target) {
 
 describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
 
-  // Signers
-  let adminSigner, userSigner, ownerSigner, keeperSigner, feeRecipientSigner;
-
   // Contracts
-  let strikeSelection, optionsPremiumPricer, intermediaryAssetContract, assetContract, vault;
+  let strikeSelection, intermediaryAssetContract, vault;
 
   // Parameters
   let asset = WETH_ADDRESS;
 
-  const rollToNextOption = async () => {
+  const rollToNextOption = async (ownerSigner, keeperSigner) => {
     await vault.connect(ownerSigner).commitAndClose();
     const nextOptionReadyAt = await vault.optionState().then(o => o.nextOptionReadyAt);
     await increaseTo(nextOptionReadyAt + DELAY_INCREMENT);
     await vault.connect(keeperSigner).rollToNextOption();
   };
 
-  const setOpynExpiryPrice = async (settlementPrice) => {
+  const setOpynExpiryPrice = async (settlementPrice, ownerSigner) => {
     const oracle = await setupOracle(asset, CHAINLINK_WETH_PRICER_STETH, ownerSigner, 1);
     const currentOption = await vault.currentOption();
     const otoken = await getContractAt("IOtoken", currentOption);
@@ -105,50 +102,46 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
 
   before(async function () {
 
-    [adminSigner, ownerSigner, keeperSigner, userSigner, feeRecipientSigner] = await ethers.getSigners();
+    // get signers
+    const [adminSigner, ownerSigner, keeperSigner, userSigner, feeRecipientSigner] = await ethers.getSigners();
 
-    // Parameters
-    let tokenName = "Ribbon ETH Theta Vault stETH";
-    let tokenSymbol = "rSTETH-THETA";
-    let tokenDecimals = 18;
-    let minimumSupply = BigNumber.from("10").pow("10").toString();
-    let asset = WETH_ADDRESS;
-    let strikeAsset = USDC_ADDRESS
-    let depositAsset = WETH_ADDRESS;
-    let collateralAsset = WSTETH_ADDRESS;
-    let intermediaryAsset = STETH_ADDRESS;
-    let premiumDiscount = BigNumber.from("997");
-    let managementFee = BigNumber.from("2000000");
-    let performanceFee = BigNumber.from("20000000");
-    let auctionDuration = 21600;
-    let deltaStep = BigNumber.from("100");
-    let deltaFirstOption = BigNumber.from("1000")
-    
     // deploy oracle
+    const asset = WETH_ADDRESS;
+    const collateralAsset = WSTETH_ADDRESS;
+    const deltaStep = BigNumber.from("100");
     const TestVolOracle = await getContractFactory(ManualVolOracle_ABI, ManualVolOracle_BYTECODE, keeperSigner);
     const volOracle = await TestVolOracle.deploy(keeperSigner.address);
     const optionId = await volOracle.getOptionId(deltaStep, asset, collateralAsset, false);
     await volOracle.setAnnualizedVol([optionId], [106480000]);
-
+    
     // increase timestamp
     const topOfPeriod = (await getTopOfPeriod()) + PERIOD;
     await increaseTo(topOfPeriod);
-
+    
     // deploy pricer
     const OptionsPremiumPricer = await getContractFactory(OptionsPremiumPricerInStables_ABI, OptionsPremiumPricerInStables_BYTECODE, ownerSigner);
-    optionsPremiumPricer = await OptionsPremiumPricer.deploy(optionId, volOracle.address, WETH_PRICE_ORACLE_ADDRESS, USDC_PRICE_ORACLE_ADDRESS);
-
+    const optionsPremiumPricer = await OptionsPremiumPricer.deploy(optionId, volOracle.address, WETH_PRICE_ORACLE_ADDRESS, USDC_PRICE_ORACLE_ADDRESS);
+    
     // deploy strike selection
+    const deltaFirstOption = BigNumber.from("1000")
     const StrikeSelection = await getContractFactory("DeltaStrikeSelection", ownerSigner);
     strikeSelection = await StrikeSelection.deploy(optionsPremiumPricer.address, deltaFirstOption, BigNumber.from(deltaStep).mul(10 ** 8));
-
+    
     // get libraries
     const VaultLifecycle = await ethers.getContractFactory("VaultLifecycle");
     const vaultLifecycleLib = await VaultLifecycle.deploy();
     const VaultLifecycleSTETH = await ethers.getContractFactory("VaultLifecycleSTETH");
     const vaultLifecycleSTETHLib = await VaultLifecycleSTETH.deploy();
-
+    
     // deploy vault contract
+    const tokenName = "Ribbon ETH Theta Vault stETH";
+    const tokenSymbol = "rSTETH-THETA";
+    const tokenDecimals = 18;
+    const minimumSupply = BigNumber.from("10").pow("10").toString();
+    const premiumDiscount = BigNumber.from("997");
+    const managementFee = BigNumber.from("2000000");
+    const performanceFee = BigNumber.from("20000000");
+    const auctionDuration = 21600;
     const options =[false, tokenDecimals, asset, asset, minimumSupply, utils.parseEther("500")];
     const initializeArgs = [ ownerSigner.address, keeperSigner.address, feeRecipientSigner.address, managementFee, performanceFee, 
       tokenName, tokenSymbol, optionsPremiumPricer.address, strikeSelection.address, premiumDiscount, auctionDuration, options];
@@ -160,16 +153,22 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     ).connect(userSigner);
 
     // deploy assets contracts
-    assetContract = await getContractAt("IWETH", depositAsset);
+    const intermediaryAsset = STETH_ADDRESS;
+    const depositAsset = WETH_ADDRESS;
+    const assetContract = await getContractAt("IWETH", depositAsset);
     await assetContract.connect(userSigner).deposit({ value: utils.parseEther("100") });
     intermediaryAssetContract = await getContractAt("IERC20", intermediaryAsset);
 
     // whitelist product
+    const strikeAsset = USDC_ADDRESS
     await whitelistProduct(asset, strikeAsset, collateralAsset, false, 1);
 
   });
 
   it("completes the withdrawal", async function () {
+
+    // get signers
+    const [, ownerSigner, keeperSigner, userSigner] = await ethers.getSigners();
 
     // deposit eth into the vault
     let depositAmount = utils.parseEther("1");
@@ -177,17 +176,17 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     await vault.connect(ownerSigner).depositETH({ value: depositAmount });
 
     // initialize withdraw
-    await rollToNextOption();
+    await rollToNextOption(ownerSigner, keeperSigner);
     await vault.initiateWithdraw(depositAmount);
 
     // update opyn price
     const latestTimestamp = (await provider.getBlock("latest")).timestamp;
     const firstOptionExpiry = moment(latestTimestamp * 1000).startOf("isoWeek").add(1, "weeks").day("friday").hours(8).minutes(0).seconds(0).unix();
     const [firstOptionStrike] = await strikeSelection.getStrikePrice(firstOptionExpiry, false);
-    await setOpynExpiryPrice(firstOptionStrike.add(100000000));
+    await setOpynExpiryPrice(firstOptionStrike.add(100000000), ownerSigner);
     
     // complete withdraw
-    await rollToNextOption()
+    await rollToNextOption(ownerSigner, keeperSigner)
     const beforeBalance = await intermediaryAssetContract.balanceOf(userSigner.address);
     await vault.completeWithdraw({ gasPrice: utils.parseUnits("30", "gwei") });
     const afterBalance = await intermediaryAssetContract.balanceOf(userSigner.address);
