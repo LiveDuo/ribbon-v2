@@ -1,14 +1,16 @@
-import { ethers, network } from "hardhat";
+const { ethers, network } = require("hardhat");
 
-import OptionsPremiumPricerInStables_ABI from "../abis/OptionsPremiumPricerInStables.json";
-import ManualVolOracle_ABI from "../abis/ManualVolOracle.json";
-import ORACLE_ABI from "../abis/OpynOracle.json";
+const OptionsPremiumPricerInStables_ABI = require("../abis/OptionsPremiumPricerInStables.json");
+const OptionsPremiumPricerInStables_BYTECODE = require("../bytecodes/PricerInStables").default;
 
-import { OptionsPremiumPricerInStables_BYTECODE, ManualVolOracle_BYTECODE } from "./helpers/constants";
+const ManualVolOracle_ABI = require("../abis/ManualVolOracle.json");
+const ManualVolOracle_BYTECODE = require("../bytecodes/ManualVolOracle").default;
 
-import { assert } from "chai";
+const ORACLE_ABI = require("../abis/OpynOracle.json");
 
-import moment from "moment-timezone";
+const { assert } = require("chai");
+
+const moment = require("moment-timezone");
 
 moment.tz.setDefault('UTC');
 

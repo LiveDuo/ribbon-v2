@@ -1,9 +1,9 @@
-import "@nomiclabs/hardhat-waffle";
-import "@nomiclabs/hardhat-ethers";
+require("@nomiclabs/hardhat-waffle");
+require("@nomiclabs/hardhat-ethers");
 
 require("dotenv").config();
 
-export default {
+module.exports = {
   solidity: {
     version: "0.8.4",
     settings: {

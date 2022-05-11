@@ -36,7 +36,7 @@
     "underscore": "^1.9.0"
   },
   "scripts": {
-    "test": "yarn run ts-mocha test/RibbonThetaSTETHVault.ts --timeout 500000 -g '#completeWithdraw'"
+    "test": "yarn run ts-mocha test/simple.ts --timeout 500000 -g '#completeWithdraw'"
   },
   "license": "MIT",
   "dependencies": {
