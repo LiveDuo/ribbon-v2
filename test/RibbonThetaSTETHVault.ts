@@ -5,14 +5,12 @@ import ManualVolOracle_ABI from "../abis/ManualVolOracle.json";
 
 import { OptionsPremiumPricerInStables_BYTECODE, ManualVolOracle_BYTECODE } from "./helpers/constants";
 
-import { deployProxy, setupOracle, setOpynOracleExpiryPriceYearn, getAssetPricer, whitelistProduct } from "./helpers/utils";
+import { deployProxy, setupOracle, setOpynOracleExpiryPriceYearn, getAssetPricer } from "./helpers/utils";
 import { assert } from "chai";
 
 import moment from "moment-timezone";
 
 moment.tz.setDefault('UTC');
-
-const { provider, getContractAt, getContractFactory, BigNumber, utils } = ethers;
 
 const STETH_ADDRESS = "0xae7ab96520de3a18e5e111b5eaab095312d7fe84";
 const LDO_ADDRESS = "0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32";
@@ -30,7 +28,7 @@ const WETH_PRICE_ORACLE_ADDRESS = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
 const USDC_PRICE_ORACLE_ADDRESS = "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6";
 
 const DELAY_INCREMENT = 100;
-const PERIOD = 43200; // 12 hours
+const PERIOD = 12 * 60 * 60; // 12 hours
 
 const getTopOfPeriod = async () => {
   const latestTimestamp = (await ethers.provider.getBlock("latest")).timestamp;
@@ -46,11 +44,11 @@ const getTopOfPeriod = async () => {
 }
 
 const increase = async (duration) => {
-  if (!BigNumber.isBigNumber(duration)) {
-    duration = BigNumber.from(duration);
+  if (!ethers.BigNumber.isBigNumber(duration)) {
+    duration = ethers.BigNumber.from(duration);
   }
 
-  if (duration.lt(BigNumber.from("0")))
+  if (duration.lt(ethers.BigNumber.from("0")))
     throw Error(`Cannot increase time by a negative amount (${duration})`);
 
   await ethers.provider.send("evm_increaseTime", [duration.toNumber()]);
@@ -59,11 +57,11 @@ const increase = async (duration) => {
 }
 
 const increaseTo = async (target) => {
-  if (!BigNumber.isBigNumber(target)) {
-    target = BigNumber.from(target);
+  if (!ethers.BigNumber.isBigNumber(target)) {
+    target = ethers.BigNumber.from(target);
   }
 
-  const now = BigNumber.from(
+  const now = ethers.BigNumber.from(
     (await ethers.provider.getBlock("latest")).timestamp
   );
 
@@ -94,7 +92,7 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
   const setOpynExpiryPrice = async (settlementPrice, ownerSigner) => {
     const oracle = await setupOracle(asset, CHAINLINK_WETH_PRICER_STETH, ownerSigner, 1);
     const currentOption = await vault.currentOption();
-    const otoken = await getContractAt("IOtoken", currentOption);
+    const otoken = await ethers.getContractAt("IOtoken", currentOption);
     const expiry = await otoken.expiryTimestamp()
     const collateralPricerSigner = await getAssetPricer(WSTETH_PRICER, ownerSigner);
     await setOpynOracleExpiryPriceYearn(asset, oracle, settlementPrice, collateralPricerSigner, expiry);
@@ -108,32 +106,32 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     // deploy intermediary asset contract
     const intermediaryAsset = STETH_ADDRESS;
     const depositAsset = WETH_ADDRESS;
-    const assetContract = await getContractAt("IWETH", depositAsset);
-    await assetContract.connect(userSigner).deposit({ value: utils.parseEther("100") });
-    intermediaryAssetContract = await getContractAt("IERC20", intermediaryAsset);
-    
+    const assetContract = await ethers.getContractAt("IWETH", depositAsset);
+    await assetContract.connect(userSigner).deposit({ value: ethers.utils.parseEther("100") });
+    intermediaryAssetContract = await ethers.getContractAt("IERC20", intermediaryAsset);
+
     // deploy strike selection oracle
     const asset = WETH_ADDRESS;
     const collateralAsset = WSTETH_ADDRESS;
-    const deltaStep = BigNumber.from("100");
-    const TestVolOracle = await getContractFactory(ManualVolOracle_ABI, ManualVolOracle_BYTECODE, keeperSigner);
+    const deltaStep = ethers.BigNumber.from("100");
+    const TestVolOracle = await ethers.getContractFactory(ManualVolOracle_ABI, ManualVolOracle_BYTECODE, keeperSigner);
     const volOracle = await TestVolOracle.deploy(keeperSigner.address);
     const optionId = await volOracle.getOptionId(deltaStep, asset, collateralAsset, false);
     await volOracle.setAnnualizedVol([optionId], [106480000]);
-    const deltaFirstOption = BigNumber.from("1000")
-    const OptionsPremiumPricer = await getContractFactory(OptionsPremiumPricerInStables_ABI, OptionsPremiumPricerInStables_BYTECODE, ownerSigner);
+    const deltaFirstOption = ethers.BigNumber.from("1000")
+    const OptionsPremiumPricer = await ethers.getContractFactory(OptionsPremiumPricerInStables_ABI, OptionsPremiumPricerInStables_BYTECODE, ownerSigner);
     const optionsPremiumPricer = await OptionsPremiumPricer.deploy(optionId, volOracle.address, WETH_PRICE_ORACLE_ADDRESS, USDC_PRICE_ORACLE_ADDRESS);
-    const StrikeSelection = await getContractFactory("DeltaStrikeSelection", ownerSigner);
-    strikeSelection = await StrikeSelection.deploy(optionsPremiumPricer.address, deltaFirstOption, BigNumber.from(deltaStep).mul(10 ** 8));
+    const StrikeSelection = await ethers.getContractFactory("DeltaStrikeSelection", ownerSigner);
+    strikeSelection = await StrikeSelection.deploy(optionsPremiumPricer.address, deltaFirstOption, ethers.BigNumber.from(deltaStep).mul(10 ** 8));
     
     // deploy vault proxy
     const VaultLifecycle = await ethers.getContractFactory("VaultLifecycle");
     const vaultLifecycleLib = await VaultLifecycle.deploy();
     const VaultLifecycleSTETH = await ethers.getContractFactory("VaultLifecycleSTETH");
     const vaultLifecycleSTETHLib = await VaultLifecycleSTETH.deploy();
-    const options =[false, 18, asset, asset, BigNumber.from("10").pow("10").toString(), utils.parseEther("500")];
-    const initializeArgs = [ ownerSigner.address, keeperSigner.address, feeRecipientSigner.address, BigNumber.from("2000000"), BigNumber.from("20000000"), 
-      "Ribbon ETH Theta Vault stETH", "rSTETH-THETA", optionsPremiumPricer.address, strikeSelection.address, BigNumber.from("997"), 21600, options];
+    const options =[false, 18, asset, asset, ethers.BigNumber.from("10").pow("10").toString(), ethers.utils.parseEther("500")];
+    const initializeArgs = [ ownerSigner.address, keeperSigner.address, feeRecipientSigner.address, ethers.BigNumber.from("2000000"), ethers.BigNumber.from("20000000"), 
+      "Ribbon ETH Theta Vault stETH", "rSTETH-THETA", optionsPremiumPricer.address, strikeSelection.address, ethers.BigNumber.from("997"), 21600, options];
     const deployArgs = [WETH_ADDRESS, USDC_ADDRESS, WSTETH_ADDRESS, LDO_ADDRESS, 
       OTOKEN_FACTORY, GAMMA_CONTROLLER, MARGIN_POOL, GNOSIS_EASY_AUCTION, STETH_ETH_CRV_POOL];
     const libs = { VaultLifecycle: vaultLifecycleLib.address, VaultLifecycleSTETH: vaultLifecycleSTETHLib.address };
@@ -148,7 +146,7 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     const [, ownerSigner, keeperSigner, userSigner] = await ethers.getSigners();
 
     // deposit eth into the vault
-    const depositAmount = utils.parseEther("1");
+    const depositAmount = ethers.utils.parseEther("1");
     await vault.depositETH({ value: depositAmount });
     await vault.connect(ownerSigner).depositETH({ value: depositAmount });
 
@@ -159,7 +157,7 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     await vault.initiateWithdraw(depositAmount);
 
     // update opyn price
-    const latestTimestamp = (await provider.getBlock("latest")).timestamp;
+    const latestTimestamp = (await ethers.provider.getBlock("latest")).timestamp;
     const firstOptionExpiry = moment(latestTimestamp * 1000).startOf("isoWeek").add(1, "weeks").day("friday").hours(8).minutes(0).seconds(0).unix();
     const [firstOptionStrike] = await strikeSelection.getStrikePrice(firstOptionExpiry, false);
     await setOpynExpiryPrice(firstOptionStrike.add(100000000), ownerSigner);
@@ -167,7 +165,7 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     // complete withdraw
     await rollToNextOption(ownerSigner, keeperSigner)
     const beforeBalance = await intermediaryAssetContract.balanceOf(userSigner.address);
-    await vault.completeWithdraw({ gasPrice: utils.parseUnits("30", "gwei") });
+    await vault.completeWithdraw({ gasPrice: ethers.utils.parseUnits("30", "gwei") });
     const afterBalance = await intermediaryAssetContract.balanceOf(userSigner.address);
     assert.ok((afterBalance.sub(beforeBalance)).lt(depositAmount));
 
