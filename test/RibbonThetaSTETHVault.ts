@@ -30,8 +30,8 @@ const WETH_PRICE_ORACLE_ADDRESS = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
 const USDC_PRICE_ORACLE_ADDRESS = "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6";
 
 const DELAY_INCREMENT = 100;
-
 const PERIOD = 43200; // 12 hours
+
 const getTopOfPeriod = async () => {
   const latestTimestamp = (await ethers.provider.getBlock("latest")).timestamp;
   let topOfPeriod: number;
@@ -85,22 +85,7 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
   let strikeSelection, optionsPremiumPricer, intermediaryAssetContract, assetContract, vault;
 
   // Parameters
-  let tokenName = "Ribbon ETH Theta Vault stETH";
-  let tokenSymbol = "rSTETH-THETA";
-  let tokenDecimals = 18;
-  let minimumSupply = BigNumber.from("10").pow("10").toString();
   let asset = WETH_ADDRESS;
-  let strikeAsset = USDC_ADDRESS
-  let depositAsset = WETH_ADDRESS;
-  let collateralAsset = WSTETH_ADDRESS;
-  let intermediaryAsset = STETH_ADDRESS;
-  let depositAmount = utils.parseEther("1");
-  let premiumDiscount = BigNumber.from("997");
-  let managementFee = BigNumber.from("2000000");
-  let performanceFee = BigNumber.from("20000000");
-  let auctionDuration = 21600;
-  let deltaStep = BigNumber.from("100");
-  let deltaFirstOption = BigNumber.from("1000")
 
   const rollToNextOption = async () => {
     await vault.connect(ownerSigner).commitAndClose();
@@ -122,6 +107,23 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
 
     [adminSigner, ownerSigner, keeperSigner, userSigner, feeRecipientSigner] = await ethers.getSigners();
 
+    // Parameters
+    let tokenName = "Ribbon ETH Theta Vault stETH";
+    let tokenSymbol = "rSTETH-THETA";
+    let tokenDecimals = 18;
+    let minimumSupply = BigNumber.from("10").pow("10").toString();
+    let asset = WETH_ADDRESS;
+    let strikeAsset = USDC_ADDRESS
+    let depositAsset = WETH_ADDRESS;
+    let collateralAsset = WSTETH_ADDRESS;
+    let intermediaryAsset = STETH_ADDRESS;
+    let premiumDiscount = BigNumber.from("997");
+    let managementFee = BigNumber.from("2000000");
+    let performanceFee = BigNumber.from("20000000");
+    let auctionDuration = 21600;
+    let deltaStep = BigNumber.from("100");
+    let deltaFirstOption = BigNumber.from("1000")
+    
     // deploy oracle
     const TestVolOracle = await getContractFactory(ManualVolOracle_ABI, ManualVolOracle_BYTECODE, keeperSigner);
     const volOracle = await TestVolOracle.deploy(keeperSigner.address);
@@ -170,6 +172,7 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
   it("completes the withdrawal", async function () {
 
     // deposit eth into the vault
+    let depositAmount = utils.parseEther("1");
     await vault.depositETH({ value: depositAmount });
     await vault.connect(ownerSigner).depositETH({ value: depositAmount });
 
