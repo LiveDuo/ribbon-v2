@@ -105,7 +105,14 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     // get signers
     const [adminSigner, ownerSigner, keeperSigner, userSigner, feeRecipientSigner] = await ethers.getSigners();
 
-    // deploy oracle
+    // deploy intermediary asset contract
+    const intermediaryAsset = STETH_ADDRESS;
+    const depositAsset = WETH_ADDRESS;
+    const assetContract = await getContractAt("IWETH", depositAsset);
+    await assetContract.connect(userSigner).deposit({ value: utils.parseEther("100") });
+    intermediaryAssetContract = await getContractAt("IERC20", intermediaryAsset);
+    
+    // deploy strike selection oracle
     const asset = WETH_ADDRESS;
     const collateralAsset = WSTETH_ADDRESS;
     const deltaStep = BigNumber.from("100");
@@ -113,51 +120,25 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     const volOracle = await TestVolOracle.deploy(keeperSigner.address);
     const optionId = await volOracle.getOptionId(deltaStep, asset, collateralAsset, false);
     await volOracle.setAnnualizedVol([optionId], [106480000]);
-    
-    // deploy pricer
+    const deltaFirstOption = BigNumber.from("1000")
     const OptionsPremiumPricer = await getContractFactory(OptionsPremiumPricerInStables_ABI, OptionsPremiumPricerInStables_BYTECODE, ownerSigner);
     const optionsPremiumPricer = await OptionsPremiumPricer.deploy(optionId, volOracle.address, WETH_PRICE_ORACLE_ADDRESS, USDC_PRICE_ORACLE_ADDRESS);
-    
-    // deploy strike selection
-    const deltaFirstOption = BigNumber.from("1000")
     const StrikeSelection = await getContractFactory("DeltaStrikeSelection", ownerSigner);
     strikeSelection = await StrikeSelection.deploy(optionsPremiumPricer.address, deltaFirstOption, BigNumber.from(deltaStep).mul(10 ** 8));
     
-    // get libraries
+    // deploy vault proxy
     const VaultLifecycle = await ethers.getContractFactory("VaultLifecycle");
     const vaultLifecycleLib = await VaultLifecycle.deploy();
     const VaultLifecycleSTETH = await ethers.getContractFactory("VaultLifecycleSTETH");
     const vaultLifecycleSTETHLib = await VaultLifecycleSTETH.deploy();
-    
-    // deploy vault contract
-    const tokenName = "Ribbon ETH Theta Vault stETH";
-    const tokenSymbol = "rSTETH-THETA";
-    const tokenDecimals = 18;
-    const minimumSupply = BigNumber.from("10").pow("10").toString();
-    const premiumDiscount = BigNumber.from("997");
-    const managementFee = BigNumber.from("2000000");
-    const performanceFee = BigNumber.from("20000000");
-    const auctionDuration = 21600;
-    const options =[false, tokenDecimals, asset, asset, minimumSupply, utils.parseEther("500")];
-    const initializeArgs = [ ownerSigner.address, keeperSigner.address, feeRecipientSigner.address, managementFee, performanceFee, 
-      tokenName, tokenSymbol, optionsPremiumPricer.address, strikeSelection.address, premiumDiscount, auctionDuration, options];
+    const options =[false, 18, asset, asset, BigNumber.from("10").pow("10").toString(), utils.parseEther("500")];
+    const initializeArgs = [ ownerSigner.address, keeperSigner.address, feeRecipientSigner.address, BigNumber.from("2000000"), BigNumber.from("20000000"), 
+      "Ribbon ETH Theta Vault stETH", "rSTETH-THETA", optionsPremiumPricer.address, strikeSelection.address, BigNumber.from("997"), 21600, options];
     const deployArgs = [WETH_ADDRESS, USDC_ADDRESS, WSTETH_ADDRESS, LDO_ADDRESS, 
       OTOKEN_FACTORY, GAMMA_CONTROLLER, MARGIN_POOL, GNOSIS_EASY_AUCTION, STETH_ETH_CRV_POOL];
     const libs = { VaultLifecycle: vaultLifecycleLib.address, VaultLifecycleSTETH: vaultLifecycleSTETHLib.address };
-    vault = (
-      await deployProxy("RibbonThetaSTETHVault", adminSigner, initializeArgs, deployArgs, { libraries: libs })
-    ).connect(userSigner);
-
-    // deploy assets contracts
-    const intermediaryAsset = STETH_ADDRESS;
-    const depositAsset = WETH_ADDRESS;
-    const assetContract = await getContractAt("IWETH", depositAsset);
-    await assetContract.connect(userSigner).deposit({ value: utils.parseEther("100") });
-    intermediaryAssetContract = await getContractAt("IERC20", intermediaryAsset);
-
-    // whitelist product
-    const strikeAsset = USDC_ADDRESS
-    await whitelistProduct(asset, strikeAsset, collateralAsset, false, 1);
+    const deployVaultTx = await deployProxy("RibbonThetaSTETHVault", adminSigner, initializeArgs, deployArgs, { libraries: libs });
+    vault = deployVaultTx.connect(userSigner);
 
   });
 
@@ -167,7 +148,7 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     const [, ownerSigner, keeperSigner, userSigner] = await ethers.getSigners();
 
     // deposit eth into the vault
-    let depositAmount = utils.parseEther("1");
+    const depositAmount = utils.parseEther("1");
     await vault.depositETH({ value: depositAmount });
     await vault.connect(ownerSigner).depositETH({ value: depositAmount });
 
