@@ -1,10 +1,10 @@
 const { ethers, network } = require("hardhat");
 
 const OptionsPremiumPricerInStables_ABI = require("../abis/OptionsPremiumPricerInStables.json");
-const OptionsPremiumPricerInStables_BYTECODE = require("../bytecodes/PricerInStables").default;
+const OptionsPremiumPricerInStables_BYTECODE = require("../bytecodes/PricerInStables");
 
 const ManualVolOracle_ABI = require("../abis/ManualVolOracle.json");
-const ManualVolOracle_BYTECODE = require("../bytecodes/ManualVolOracle").default;
+const ManualVolOracle_BYTECODE = require("../bytecodes/ManualVolOracle");
 
 const ORACLE_ABI = require("../abis/OpynOracle.json");
 

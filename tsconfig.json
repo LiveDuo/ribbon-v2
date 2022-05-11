@@ -1,9 +1,0 @@
-{
-  "compilerOptions": {
-    "target": "es2015",
-    "esModuleInterop": true,
-    "moduleResolution": "node",
-    "resolveJsonModule": true
-  },
-  "include": ["./hardhat.config.ts", "./scripts", "./test"]
-}
