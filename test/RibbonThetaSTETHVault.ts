@@ -1,13 +1,12 @@
-import { ethers, network } from "hardhat";
+import { ethers } from "hardhat";
 
 import OptionsPremiumPricerInStables_ABI from "../abis/OptionsPremiumPricerInStables.json";
 import ManualVolOracle_ABI from "../abis/ManualVolOracle.json";
 
-import { OPTION_PROTOCOL, CHAINLINK_WETH_PRICER_STETH, GAMMA_CONTROLLER, MARGIN_POOL, OTOKEN_FACTORY, USDC_ADDRESS, STETH_ADDRESS, WSTETH_ADDRESS, LDO_ADDRESS, STETH_ETH_CRV_POOL, WETH_ADDRESS, GNOSIS_EASY_AUCTION, WSTETH_PRICER, OptionsPremiumPricerInStables_BYTECODE, ManualVolOracle_BYTECODE, CHAINID, } from "./constants/constants";
+import { OptionsPremiumPricerInStables_BYTECODE, ManualVolOracle_BYTECODE } from "./helpers/constants";
 
 import { deployProxy, setupOracle, setOpynOracleExpiryPriceYearn, getAssetPricer, whitelistProduct } from "./helpers/utils";
-import * as time from "./helpers/time";
-import { assert } from "./helpers/assertions";
+import { assert } from "chai";
 
 import moment from "moment-timezone";
 
@@ -15,10 +14,71 @@ moment.tz.setDefault('UTC');
 
 const { provider, getContractAt, getContractFactory, BigNumber, utils } = ethers;
 
-const wethPriceOracleAddress = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
-const usdcPriceOracleAddress = "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6";
+const STETH_ADDRESS = "0xae7ab96520de3a18e5e111b5eaab095312d7fe84";
+const LDO_ADDRESS = "0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32";
+const STETH_ETH_CRV_POOL = "0xDC24316b9AE028F1497c275EB9192a3Ea0f67022";
+const WSTETH_PRICER = "0x4661951D252993AFa69b36bcc7Ba7da4a48813bF";
+const GNOSIS_EASY_AUCTION = "0x0b7fFc1f4AD541A4Ed16b40D8c37f0929158D101"
+const WETH_ADDRESS = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+const WSTETH_ADDRESS = "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0"
+const GAMMA_CONTROLLER = "0x4ccc2339F87F6c59c6893E1A678c2266cA58dC72"
+const OTOKEN_FACTORY = "0x7C06792Af1632E77cb27a558Dc0885338F4Bdf8E";
+const MARGIN_POOL = "0x5934807cC0654d46755eBd2848840b616256C6Ef";
+const USDC_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+const CHAINLINK_WETH_PRICER_STETH = "0x128cE9B4D97A6550905dE7d9Abc2b8C747b0996C";
+const WETH_PRICE_ORACLE_ADDRESS = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
+const USDC_PRICE_ORACLE_ADDRESS = "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6";
 
 const DELAY_INCREMENT = 100;
+
+const bnLt = (aBN, bBN) => assert.ok(aBN.lt(bBN), `${aBN.toString()} is not less than ${bBN.toString()}`);
+const bnGte = (aBN, bBN) => assert.ok(aBN.gte(bBN), `${aBN.toString()} is not greater than or equal to ${bBN.toString()}`);
+const bnLte = (aBN, bBN) => assert.ok(aBN.lte(bBN), `${aBN.toString()} is not less than or equal to ${bBN.toString()}`);
+
+const PERIOD = 43200; // 12 hours
+const getTopOfPeriod = async () => {
+  const latestTimestamp = (await ethers.provider.getBlock("latest")).timestamp;
+  let topOfPeriod: number;
+
+  const rem = latestTimestamp % PERIOD;
+  if (rem < Math.floor(PERIOD / 2)) {
+    topOfPeriod = latestTimestamp - rem + PERIOD;
+  } else {
+    topOfPeriod = latestTimestamp + rem + PERIOD;
+  }
+  return topOfPeriod;
+};
+
+async function increase(duration) {
+  if (!BigNumber.isBigNumber(duration)) {
+    duration = BigNumber.from(duration);
+  }
+
+  if (duration.lt(BigNumber.from("0")))
+    throw Error(`Cannot increase time by a negative amount (${duration})`);
+
+  await ethers.provider.send("evm_increaseTime", [duration.toNumber()]);
+
+  await ethers.provider.send("evm_mine", []);
+}
+
+async function increaseTo(target) {
+  if (!BigNumber.isBigNumber(target)) {
+    target = BigNumber.from(target);
+  }
+
+  const now = BigNumber.from(
+    (await ethers.provider.getBlock("latest")).timestamp
+  );
+
+  if (target.lt(now))
+    throw Error(
+      `Cannot increase current time (${now}) to a moment in the past (${target})`
+    );
+
+  const diff = target.sub(now);
+  return increase(diff);
+}
 
 describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
 
@@ -33,11 +93,10 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
   let tokenSymbol = "rSTETH-THETA";
   let tokenDecimals = 18;
   let minimumSupply = BigNumber.from("10").pow("10").toString();
-  let chainId = network.config.chainId;
-  let asset = WETH_ADDRESS[chainId];
-  let strikeAsset = USDC_ADDRESS[chainId]
-  let depositAsset = WETH_ADDRESS[chainId];
-  let collateralAsset = WSTETH_ADDRESS[chainId];
+  let asset = WETH_ADDRESS;
+  let strikeAsset = USDC_ADDRESS
+  let depositAsset = WETH_ADDRESS;
+  let collateralAsset = WSTETH_ADDRESS;
   let intermediaryAsset = STETH_ADDRESS;
   let depositAmount = utils.parseEther("1");
   let premiumDiscount = BigNumber.from("997");
@@ -51,12 +110,12 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
   const rollToNextOption = async () => {
     await vault.connect(ownerSigner).commitAndClose();
     const nextOptionReadyAt = await vault.optionState().then(o => o.nextOptionReadyAt);
-    await time.increaseTo(nextOptionReadyAt + DELAY_INCREMENT);
+    await increaseTo(nextOptionReadyAt + DELAY_INCREMENT);
     await vault.connect(keeperSigner).rollToNextOption();
   };
 
   const setOpynExpiryPrice = async (settlementPrice) => {
-    const oracle = await setupOracle(asset, CHAINLINK_WETH_PRICER_STETH, ownerSigner, OPTION_PROTOCOL.GAMMA);
+    const oracle = await setupOracle(asset, CHAINLINK_WETH_PRICER_STETH, ownerSigner, 1);
     const currentOption = await vault.currentOption();
     const otoken = await getContractAt("IOtoken", currentOption);
     const expiry = await otoken.expiryTimestamp()
@@ -75,12 +134,12 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     await volOracle.setAnnualizedVol([optionId], [106480000]);
 
     // increase timestamp
-    const topOfPeriod = (await time.getTopOfPeriod()) + time.PERIOD;
-    await time.increaseTo(topOfPeriod);
+    const topOfPeriod = (await getTopOfPeriod()) + PERIOD;
+    await increaseTo(topOfPeriod);
 
     // deploy pricer
     const OptionsPremiumPricer = await getContractFactory(OptionsPremiumPricerInStables_ABI, OptionsPremiumPricerInStables_BYTECODE, ownerSigner);
-    optionsPremiumPricer = await OptionsPremiumPricer.deploy(optionId, volOracle.address, wethPriceOracleAddress, usdcPriceOracleAddress);
+    optionsPremiumPricer = await OptionsPremiumPricer.deploy(optionId, volOracle.address, WETH_PRICE_ORACLE_ADDRESS, USDC_PRICE_ORACLE_ADDRESS);
 
     // deploy strike selection
     const StrikeSelection = await getContractFactory("DeltaStrikeSelection", ownerSigner);
@@ -96,8 +155,8 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     const options =[false, tokenDecimals, asset, asset, minimumSupply, utils.parseEther("500")];
     const initializeArgs = [ ownerSigner.address, keeperSigner.address, feeRecipientSigner.address, managementFee, performanceFee, 
       tokenName, tokenSymbol, optionsPremiumPricer.address, strikeSelection.address, premiumDiscount, auctionDuration, options];
-    const deployArgs = [WETH_ADDRESS[chainId], USDC_ADDRESS[chainId], WSTETH_ADDRESS[chainId], LDO_ADDRESS, 
-      OTOKEN_FACTORY[chainId], GAMMA_CONTROLLER[chainId], MARGIN_POOL[chainId], GNOSIS_EASY_AUCTION[chainId], STETH_ETH_CRV_POOL];
+    const deployArgs = [WETH_ADDRESS, USDC_ADDRESS, WSTETH_ADDRESS, LDO_ADDRESS, 
+      OTOKEN_FACTORY, GAMMA_CONTROLLER, MARGIN_POOL, GNOSIS_EASY_AUCTION, STETH_ETH_CRV_POOL];
     const libs = { VaultLifecycle: vaultLifecycleLib.address, VaultLifecycleSTETH: vaultLifecycleSTETHLib.address };
     vault = (
       await deployProxy("RibbonThetaSTETHVault", adminSigner, initializeArgs, deployArgs, { libraries: libs })
@@ -109,7 +168,7 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     intermediaryAssetContract = await getContractAt("IERC20", intermediaryAsset);
 
     // whitelist product
-    await whitelistProduct(asset, strikeAsset, collateralAsset, false, OPTION_PROTOCOL.GAMMA);
+    await whitelistProduct(asset, strikeAsset, collateralAsset, false, 1);
 
   });
 
@@ -142,8 +201,8 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     // check balance and withdraw amount
     const afterBalance = await intermediaryAssetContract.balanceOf(userSigner.address);
     const actualWithdrawAmount = afterBalance.sub(beforeBalance);
-    assert.bnLt(actualWithdrawAmount, depositAmount);
-    assert.bnGte(actualWithdrawAmount.add(5), stETHAmountAfterRounding);
-    assert.bnLte(actualWithdrawAmount, stETHAmountAfterRounding.add(5));
+    bnLt(actualWithdrawAmount, depositAmount);
+    bnGte(actualWithdrawAmount.add(5), stETHAmountAfterRounding);
+    bnLte(actualWithdrawAmount, stETHAmountAfterRounding.add(5));
   });
 });

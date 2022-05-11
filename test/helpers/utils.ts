@@ -29,7 +29,7 @@ import {
   TD_ORACLE_OWNER,
   TD_WHITELIST,
   TD_WHITELIST_OWNER,
-} from "../constants/constants";
+} from "./constants";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/dist/src/signers";
 import { BigNumber, BigNumberish, Contract } from "ethers";
 import { wmul } from "./math";
