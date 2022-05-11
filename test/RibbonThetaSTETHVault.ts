@@ -78,10 +78,10 @@ const increaseTo = async (target) => {
 
 describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
 
-  // Contracts
+  // contracts
   let strikeSelection, intermediaryAssetContract, vault;
 
-  // Parameters
+  // parameters
   let asset = WETH_ADDRESS;
 
   const rollToNextOption = async (ownerSigner, keeperSigner) => {
@@ -113,10 +113,6 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     const volOracle = await TestVolOracle.deploy(keeperSigner.address);
     const optionId = await volOracle.getOptionId(deltaStep, asset, collateralAsset, false);
     await volOracle.setAnnualizedVol([optionId], [106480000]);
-    
-    // increase timestamp
-    const topOfPeriod = (await getTopOfPeriod()) + PERIOD;
-    await increaseTo(topOfPeriod);
     
     // deploy pricer
     const OptionsPremiumPricer = await getContractFactory(OptionsPremiumPricerInStables_ABI, OptionsPremiumPricerInStables_BYTECODE, ownerSigner);
@@ -176,6 +172,8 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     await vault.connect(ownerSigner).depositETH({ value: depositAmount });
 
     // initialize withdraw
+    const topOfPeriod = await getTopOfPeriod().then(p => p + PERIOD);
+    await increaseTo(topOfPeriod);
     await rollToNextOption(ownerSigner, keeperSigner);
     await vault.initiateWithdraw(depositAmount);
 
