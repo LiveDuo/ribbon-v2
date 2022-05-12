@@ -3,9 +3,6 @@ const { ethers, network } = require("hardhat");
 const OptionsPremiumPricerInStables_ABI = require("../abis/OptionsPremiumPricerInStables.json");
 const OptionsPremiumPricerInStables_BYTECODE = require("../bytecodes/PricerInStables");
 
-const ManualVolOracle_ABI = require("../abis/ManualVolOracle.json");
-const ManualVolOracle_BYTECODE = require("../bytecodes/ManualVolOracle");
-
 const ORACLE_ABI = require("../abis/OpynOracle.json");
 
 const { assert } = require("chai");
@@ -111,11 +108,6 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     // get signers
     const [adminSigner, ownerSigner, keeperSigner, userSigner, feeRecipientSigner] = await ethers.getSigners();
 
-    // get wrapped ether
-    const depositAsset = WETH_ADDRESS;
-    const assetContract = await ethers.getContractAt("IWETH", depositAsset);
-    await assetContract.connect(userSigner).deposit({ value: ethers.utils.parseEther("100") });
-
     // deploy strike selection oracle
     const deltaStep = ethers.BigNumber.from("100");
     const deltaFirstOption = ethers.BigNumber.from("1000")
@@ -151,6 +143,8 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     const [, ownerSigner, keeperSigner, userSigner] = await ethers.getSigners();
 
     // deposit eth into the vault
+    const wethContract = await ethers.getContractAt("IWETH", WETH_ADDRESS);
+    await wethContract.connect(userSigner).deposit({ value: ethers.utils.parseEther("100") });
     const depositAmount = ethers.utils.parseEther("1");
     await vault.depositETH({ value: depositAmount });
     await vault.connect(ownerSigner).depositETH({ value: depositAmount });
