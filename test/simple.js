@@ -26,8 +26,7 @@ const OTOKEN_FACTORY = "0x7C06792Af1632E77cb27a558Dc0885338F4Bdf8E";
 const MARGIN_POOL = "0x5934807cC0654d46755eBd2848840b616256C6Ef";
 const USDC_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const CHAINLINK_WETH_PRICER_STETH = "0x128cE9B4D97A6550905dE7d9Abc2b8C747b0996C";
-const WETH_PRICE_ORACLE_ADDRESS = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
-const USDC_PRICE_ORACLE_ADDRESS = "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6";
+const OPTIONS_PREMIUM_PRICER = "0x5ba2a42b74a72a1a3ccc37cf03802a0b7a551139";
 const YEARN_PRICER_OWNER = "0xfacb407914655562d6619b0048a612B1795dF783";
 const GAMMA_ORACLE = "0x789cD7AB3742e23Ce0952F6Bc3Eb3A73A0E08833"
 
@@ -102,7 +101,7 @@ const setOpynExpiryPrice = async (vault, underlyingAsset, underlyingSettlePrice,
 describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
 
   // contracts
-  let strikeSelection, intermediaryAssetContract, vault;
+  let strikeSelection, vault;
 
   // parameters
   let asset = WETH_ADDRESS;
@@ -112,23 +111,16 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     // get signers
     const [adminSigner, ownerSigner, keeperSigner, userSigner, feeRecipientSigner] = await ethers.getSigners();
 
-    // deploy intermediary asset contract
-    const intermediaryAsset = STETH_ADDRESS;
+    // get wrapped ether
     const depositAsset = WETH_ADDRESS;
     const assetContract = await ethers.getContractAt("IWETH", depositAsset);
     await assetContract.connect(userSigner).deposit({ value: ethers.utils.parseEther("100") });
-    intermediaryAssetContract = await ethers.getContractAt("IERC20", intermediaryAsset);
 
     // deploy strike selection oracle
-    const collateralAsset = WSTETH_ADDRESS;
     const deltaStep = ethers.BigNumber.from("100");
-    const TestVolOracle = await ethers.getContractFactory(ManualVolOracle_ABI, ManualVolOracle_BYTECODE, keeperSigner);
-    const volOracle = await TestVolOracle.deploy(keeperSigner.address);
-    const optionId = await volOracle.getOptionId(deltaStep, asset, collateralAsset, false);
-    await volOracle.setAnnualizedVol([optionId], [106480000]);
     const deltaFirstOption = ethers.BigNumber.from("1000")
     const OptionsPremiumPricer = await ethers.getContractFactory(OptionsPremiumPricerInStables_ABI, OptionsPremiumPricerInStables_BYTECODE, ownerSigner);
-    const optionsPremiumPricer = await OptionsPremiumPricer.deploy(optionId, volOracle.address, WETH_PRICE_ORACLE_ADDRESS, USDC_PRICE_ORACLE_ADDRESS);
+    const optionsPremiumPricer = OptionsPremiumPricer.attach(OPTIONS_PREMIUM_PRICER);
     const StrikeSelection = await ethers.getContractFactory("DeltaStrikeSelection", ownerSigner);
     strikeSelection = await StrikeSelection.deploy(optionsPremiumPricer.address, deltaFirstOption, ethers.BigNumber.from(deltaStep).mul(10 ** 8));
     
@@ -178,6 +170,7 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     
     // complete withdraw
     await rollToNextOption(vault, ownerSigner, keeperSigner)
+    const intermediaryAssetContract = await ethers.getContractAt("IERC20", STETH_ADDRESS);
     const beforeBalance = await intermediaryAssetContract.balanceOf(userSigner.address);
     await vault.completeWithdraw({ gasPrice: ethers.utils.parseUnits("30", "gwei") });
     const afterBalance = await intermediaryAssetContract.balanceOf(userSigner.address);
