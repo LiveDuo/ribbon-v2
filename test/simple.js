@@ -28,7 +28,6 @@ const ORACLE_OWNER = "0x2FCb2fc8dD68c48F406825255B4446EDFbD3e140"
 const ORACLE_LOCKING_PERIOD = 300;
 const ORACLE_DISPUTE_PERIOD = 7200;
 const DELAY_INCREMENT = 100;
-const PERIOD = 12 * 60 * 60; // 12 hours
 
 // https://github.com/ribbon-finance/metavault/blob/main/contracts/V2/interfaces/IRibbonVault.sol
 // https://github.com/ribbon-finance/ribbon-v2/blob/master/contracts/vaults/STETHVault/RibbonThetaSTETHVault.sol
@@ -37,8 +36,8 @@ const PERIOD = 12 * 60 * 60; // 12 hours
 
 const increaseTo = async (amount) => {
   const target = ethers.BigNumber.from(amount);
-  const timestamp = await ethers.provider.getBlock("latest").then(r => r.timestamp)
-  const now = ethers.BigNumber.from(timestamp);
+  const block = await ethers.provider.getBlock("latest")
+  const now = ethers.BigNumber.from(block.timestamp);
   const duration = ethers.BigNumber.from(target.sub(now));
 
   await ethers.provider.send("evm_increaseTime", [duration.toNumber()]);
@@ -47,7 +46,7 @@ const increaseTo = async (amount) => {
 
 const rollToNextOption = async (vault, ownerSigner, keeperSigner) => {
   await vault.connect(ownerSigner).commitAndClose();
-  const nextOptionReadyAt = await vault.optionState().then(o => o.nextOptionReadyAt);
+  const nextOptionReadyAt = await vault.nextOptionReadyAt().then(r => r.toNumber() + 1);
   await increaseTo(nextOptionReadyAt + DELAY_INCREMENT);
   await vault.connect(keeperSigner).rollToNextOption();
 };
@@ -55,40 +54,39 @@ const rollToNextOption = async (vault, ownerSigner, keeperSigner) => {
 const setOpynExpiryPrice = async (vault, underlyingAsset, underlyingSettlePrice, ownerSigner) => {
 
   await network.provider.request({ method: "hardhat_impersonateAccount", params: [CHAINLINK_WETH_PRICER_STETH] });
-  await network.provider.request({ method: "hardhat_impersonateAccount", params: [ORACLE_OWNER] });
-  const oracleOwnerSigner2 = await ethers.provider.getSigner(ORACLE_OWNER);
-
   const pricerSigner = await ethers.provider.getSigner(CHAINLINK_WETH_PRICER_STETH);
+
   const forceSendContract = await ethers.getContractFactory("ForceSend");
   const forceSend = await forceSendContract.deploy(); // forces the sending of Ether to WBTC minter
   await forceSend.connect(ownerSigner).go(CHAINLINK_WETH_PRICER_STETH, { value: ethers.utils.parseEther("1") });
-
+  
   const oracle = new ethers.Contract(GAMMA_ORACLE, ORACLE_ABI, pricerSigner);
+  await network.provider.request({ method: "hardhat_impersonateAccount", params: [ORACLE_OWNER] });
+
+  const oracleOwnerSigner = await ethers.provider.getSigner(ORACLE_OWNER);
   await ownerSigner.sendTransaction({ to: ORACLE_OWNER, value: ethers.utils.parseEther("1"), });
 
-  await oracle.connect(oracleOwnerSigner2).setStablePrice(USDC_ADDRESS, "100000000");
-  await oracle.connect(oracleOwnerSigner2).setAssetPricer(underlyingAsset, CHAINLINK_WETH_PRICER_STETH);
+  await oracle.connect(oracleOwnerSigner).setStablePrice(USDC_ADDRESS, "100000000");
+  await oracle.connect(oracleOwnerSigner).setAssetPricer(underlyingAsset, CHAINLINK_WETH_PRICER_STETH);
 
   const currentOption = await vault.currentOption();
   const otoken = await ethers.getContractAt("IOtoken", currentOption);
-  const expiry = await otoken.expiryTimestamp()
-
-  await network.provider.request({ method: "hardhat_impersonateAccount", params: [WSTETH_PRICER] });
-  const pricerContract = await ethers.getContractAt("IYearnPricer", WSTETH_PRICER);
-  await forceSend.connect(ownerSigner).go(WSTETH_PRICER, { value: ethers.utils.parseEther("0.5") });
-  const collateralPricer  = await pricerContract.connect(ownerSigner);
+  const expiry = await otoken.expiryTimestamp();
 
   await increaseTo(expiry.toNumber() + ORACLE_LOCKING_PERIOD + 1);
+
+  const pricerContract = await ethers.getContractAt("IYearnPricer", WSTETH_PRICER);
+  await forceSend.connect(ownerSigner).go(WSTETH_PRICER, { value: ethers.utils.parseEther("0.5") });
+  const collateralPricer = await pricerContract.connect(ownerSigner);
 
   await oracle.setExpiryPrice(underlyingAsset, expiry, underlyingSettlePrice).then(r => r.wait());
   await network.provider.request({ method: "hardhat_impersonateAccount", params: [YEARN_PRICER_OWNER], });
 
-  const oracleOwnerSigner = await ethers.provider.getSigner(YEARN_PRICER_OWNER);
-  const res2 = await collateralPricer.connect(oracleOwnerSigner).setExpiryPriceInOracle(expiry);
-  const receipt = await res2.wait();
+  const yearnPricerSigner = await ethers.provider.getSigner(YEARN_PRICER_OWNER);
+  const receipt = await collateralPricer.connect(yearnPricerSigner).setExpiryPriceInOracle(expiry).then(r => r.wait());
 
-  const timestamp = (await ethers.provider.getBlock(receipt.blockNumber)).timestamp;
-  await increaseTo(timestamp + ORACLE_DISPUTE_PERIOD + 1);
+  const block = await ethers.provider.getBlock(receipt.blockNumber);
+  await increaseTo(block.timestamp + ORACLE_DISPUTE_PERIOD + 1);
 };
 
 describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
@@ -104,11 +102,9 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     // get signers
     const [adminSigner, ownerSigner, keeperSigner, userSigner, feeRecipientSigner] = await ethers.getSigners();
 
-    // deploy strike selection oracle
+    // deploy vault proxy
     const strikeSelection = await ethers.getContractAt('DeltaStrikeSelection', STRIKE_SELECTION);
     const optionsPremiumPricer = await strikeSelection.optionsPremiumPricer();
-    
-    // deploy vault proxy
     const VaultLifecycle = await ethers.getContractFactory("VaultLifecycle");
     const vaultLifecycleLib = await VaultLifecycle.deploy();
     const VaultLifecycleSTETH = await ethers.getContractFactory("VaultLifecycleSTETH");
@@ -125,6 +121,7 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     const initBytes = LogicContract.interface.encodeFunctionData("initialize", initializeArgs);
     const proxy = await AdminUpgradeabilityProxy.deploy(logic.address, await adminSigner.getAddress(), initBytes);
     const deployVaultTx = await ethers.getContractAt("RibbonThetaSTETHVault", proxy.address);
+    // const deployVaultTx = await ethers.getContractAt("RibbonThetaSTETHVault", '0x25751853eab4d0eb3652b5eb6ecb102a2789644b');
     vault = deployVaultTx.connect(userSigner);
 
   });
@@ -142,9 +139,6 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     await vault.connect(ownerSigner).depositETH({ value: depositAmount });
 
     // initialize withdraw
-    const {timestamp} = await ethers.provider.getBlock("latest");
-    const duration = (timestamp % PERIOD < Math.floor(PERIOD / 2) ? -1 : 1) * (timestamp % PERIOD) + 2 * PERIOD;
-    await increaseTo(timestamp + duration);
     await rollToNextOption(vault, ownerSigner, keeperSigner);
     await vault.initiateWithdraw(depositAmount);
 
