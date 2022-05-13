@@ -18,12 +18,11 @@ module.exports = {
       chainId: 1,
       forking: {
         url: process.env.TEST_URI,
-        blockNumber: 14748950,
         gasLimit: 8e6,
       },
     },
   },
   mocha: {
-    timeout: 60000
+    timeout: 150000
   }
 };
