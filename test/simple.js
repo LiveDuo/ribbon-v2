@@ -8,26 +8,16 @@ const moment = require("moment-timezone");
 
 moment.tz.setDefault('UTC');
 
-const STETH_ADDRESS = "0xae7ab96520de3a18e5e111b5eaab095312d7fe84";
-const LDO_ADDRESS = "0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32";
-const STETH_ETH_CRV_POOL = "0xDC24316b9AE028F1497c275EB9192a3Ea0f67022";
-const WSTETH_PRICER = "0x4661951D252993AFa69b36bcc7Ba7da4a48813bF";
-const GNOSIS_EASY_AUCTION = "0x0b7fFc1f4AD541A4Ed16b40D8c37f0929158D101"
-const WETH_ADDRESS = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-const WSTETH_ADDRESS = "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0"
-const GAMMA_CONTROLLER = "0x4ccc2339F87F6c59c6893E1A678c2266cA58dC72"
-const OTOKEN_FACTORY = "0x7C06792Af1632E77cb27a558Dc0885338F4Bdf8E";
-const MARGIN_POOL = "0x5934807cC0654d46755eBd2848840b616256C6Ef";
-const USDC_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
-const CHAINLINK_WETH_PRICER_STETH = "0x128cE9B4D97A6550905dE7d9Abc2b8C747b0996C";
-const STRIKE_SELECTION = "0xfbff9b1043c4998212fb7969a05c307539042b97";
-const YEARN_PRICER_OWNER = "0xfacb407914655562d6619b0048a612B1795dF783";
-const GAMMA_ORACLE = "0x789cD7AB3742e23Ce0952F6Bc3Eb3A73A0E08833"
-const ORACLE_OWNER = "0x2FCb2fc8dD68c48F406825255B4446EDFbD3e140"
-
+// constants
 const ORACLE_LOCKING_PERIOD = 300;
 const ORACLE_DISPUTE_PERIOD = 7200;
 const DELAY_INCREMENT = 100;
+
+// vault
+const STETH_ADDRESS = "0xae7ab96520de3a18e5e111b5eaab095312d7fe84";
+const LDO_ADDRESS = "0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32";
+const STETH_ETH_CRV_POOL = "0xDC24316b9AE028F1497c275EB9192a3Ea0f67022";
+const WSTETH_ADDRESS = "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0"
 
 // https://github.com/ribbon-finance/metavault/blob/main/contracts/V2/interfaces/IRibbonVault.sol
 // https://github.com/ribbon-finance/ribbon-v2/blob/master/contracts/vaults/STETHVault/RibbonThetaSTETHVault.sol
@@ -55,9 +45,12 @@ const setOpynExpiryPrice = async (vault, underlyingAsset, underlyingSettlePrice,
 
   const forceSendContract = await ethers.getContractFactory("ForceSend");
   const forceSend = await forceSendContract.deploy(); // forces the sending of Ether to WBTC minter
+  const CHAINLINK_WETH_PRICER_STETH = "0x128cE9B4D97A6550905dE7d9Abc2b8C747b0996C";
   await forceSend.connect(ownerSigner).go(CHAINLINK_WETH_PRICER_STETH, { value: ethers.utils.parseEther("1") });
   
+  const GAMMA_ORACLE = "0x789cD7AB3742e23Ce0952F6Bc3Eb3A73A0E08833"
   const oracle = new ethers.Contract(GAMMA_ORACLE, ORACLE_ABI, ownerSigner);
+  const ORACLE_OWNER = "0x2FCb2fc8dD68c48F406825255B4446EDFbD3e140"
   await network.provider.request({ method: "hardhat_impersonateAccount", params: [ORACLE_OWNER] });
 
   const oracleOwnerSigner = await ethers.provider.getSigner(ORACLE_OWNER);
@@ -70,11 +63,13 @@ const setOpynExpiryPrice = async (vault, underlyingAsset, underlyingSettlePrice,
 
   await increaseTo(expiry.toNumber() + ORACLE_LOCKING_PERIOD + 1);
 
+  const WSTETH_PRICER = "0x4661951D252993AFa69b36bcc7Ba7da4a48813bF";
   const pricerContract = await ethers.getContractAt("IYearnPricer", WSTETH_PRICER);
 
   await network.provider.request({ method: "hardhat_impersonateAccount", params: [CHAINLINK_WETH_PRICER_STETH] });
   const pricerSigner = await ethers.provider.getSigner(CHAINLINK_WETH_PRICER_STETH);
 
+  const YEARN_PRICER_OWNER = "0xfacb407914655562d6619b0048a612B1795dF783";
   await oracle.connect(pricerSigner).setExpiryPrice(underlyingAsset, expiry, underlyingSettlePrice);
   await network.provider.request({ method: "hardhat_impersonateAccount", params: [YEARN_PRICER_OWNER], });
 
@@ -87,17 +82,22 @@ const setOpynExpiryPrice = async (vault, underlyingAsset, underlyingSettlePrice,
 
 describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
 
-  // contracts
   let vault;
-
-  // parameters
-  let asset = WETH_ADDRESS;
-
+  
   before(async function () {
 
     // get signers
     const [adminSigner, ownerSigner, keeperSigner, userSigner, feeRecipientSigner] = await ethers.getSigners();
 
+    const deployVaultTxNew = await ethers.getContractAt("RibbonThetaSTETHVault", '0x25751853eab4d0eb3652b5eb6ecb102a2789644b');
+    const GNOSIS_EASY_AUCTION = await deployVaultTxNew.GNOSIS_EASY_AUCTION()
+    const GAMMA_CONTROLLER =  await deployVaultTxNew.GAMMA_CONTROLLER()
+    const MARGIN_POOL =  await deployVaultTxNew.MARGIN_POOL()
+    const OTOKEN_FACTORY = await deployVaultTxNew.OTOKEN_FACTORY()
+    const USDC_ADDRESS = await deployVaultTxNew.USDC()
+    const WETH_ADDRESS = await deployVaultTxNew.WETH()
+    const STRIKE_SELECTION = await deployVaultTxNew.strikeSelection()
+    
     // deploy vault proxy
     const strikeSelection = await ethers.getContractAt('DeltaStrikeSelection', STRIKE_SELECTION);
     const optionsPremiumPricer = await strikeSelection.optionsPremiumPricer();
@@ -105,7 +105,8 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     const vaultLifecycleLib = await VaultLifecycle.deploy();
     const VaultLifecycleSTETH = await ethers.getContractFactory("VaultLifecycleSTETH");
     const vaultLifecycleSTETHLib = await VaultLifecycleSTETH.deploy();
-    const options =[false, 18, asset, asset, ethers.BigNumber.from("10").pow("10").toString(), ethers.utils.parseEther("500")];
+
+    const options =[false, 18, WETH_ADDRESS, WETH_ADDRESS, ethers.BigNumber.from("10").pow("10").toString(), ethers.utils.parseEther("500")];
     const initializeArgs = [ ownerSigner.address, keeperSigner.address, feeRecipientSigner.address, ethers.BigNumber.from("2000000"), ethers.BigNumber.from("20000000"), 
       "Ribbon ETH Theta Vault stETH", "rSTETH-THETA", optionsPremiumPricer, strikeSelection.address, ethers.BigNumber.from("997"), 21600, options];
     const deployArgs = [WETH_ADDRESS, USDC_ADDRESS, WSTETH_ADDRESS, LDO_ADDRESS, 
@@ -119,7 +120,6 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     const deployVaultTx = await ethers.getContractAt("RibbonThetaSTETHVault", proxy.address);
     // const deployVaultTx = await ethers.getContractAt("RibbonThetaSTETHVault", '0x25751853eab4d0eb3652b5eb6ecb102a2789644b');
     vault = deployVaultTx.connect(userSigner);
-
   });
 
   it("completes the withdrawal", async function () {
@@ -128,7 +128,8 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     const [, ownerSigner, keeperSigner, userSigner] = await ethers.getSigners();
 
     // deposit eth into the vault
-    const wethContract = await ethers.getContractAt("IWETH", WETH_ADDRESS);
+    const asset = await vault.WETH()
+    const wethContract = await ethers.getContractAt("IWETH", asset);
     await wethContract.connect(userSigner).deposit({ value: ethers.utils.parseEther("100") });
     const depositAmount = ethers.utils.parseEther("1");
     await vault.depositETH({ value: depositAmount });
@@ -141,6 +142,7 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     // update opyn price
     const latestTimestamp = (await ethers.provider.getBlock("latest")).timestamp;
     const firstOptionExpiry = moment(latestTimestamp * 1000).startOf("isoWeek").add(1, "weeks").day("friday").hours(8).minutes(0).seconds(0).unix();
+    const STRIKE_SELECTION = await vault.strikeSelection()
     const strikeSelection = await ethers.getContractAt('DeltaStrikeSelection', STRIKE_SELECTION);
     const [firstOptionStrike] = await strikeSelection.getStrikePrice(firstOptionExpiry, false);
     await setOpynExpiryPrice(vault, asset, firstOptionStrike.add(100000000), ownerSigner);
