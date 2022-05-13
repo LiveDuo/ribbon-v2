@@ -53,19 +53,15 @@ const rollToNextOption = async (vault, ownerSigner, keeperSigner) => {
 
 const setOpynExpiryPrice = async (vault, underlyingAsset, underlyingSettlePrice, ownerSigner) => {
 
-  await network.provider.request({ method: "hardhat_impersonateAccount", params: [CHAINLINK_WETH_PRICER_STETH] });
-  const pricerSigner = await ethers.provider.getSigner(CHAINLINK_WETH_PRICER_STETH);
-
   const forceSendContract = await ethers.getContractFactory("ForceSend");
   const forceSend = await forceSendContract.deploy(); // forces the sending of Ether to WBTC minter
   await forceSend.connect(ownerSigner).go(CHAINLINK_WETH_PRICER_STETH, { value: ethers.utils.parseEther("1") });
   
-  const oracle = new ethers.Contract(GAMMA_ORACLE, ORACLE_ABI, pricerSigner);
+  const oracle = new ethers.Contract(GAMMA_ORACLE, ORACLE_ABI, ownerSigner);
   await network.provider.request({ method: "hardhat_impersonateAccount", params: [ORACLE_OWNER] });
 
   const oracleOwnerSigner = await ethers.provider.getSigner(ORACLE_OWNER);
 
-  await oracle.connect(oracleOwnerSigner).setStablePrice(USDC_ADDRESS, "100000000");
   await oracle.connect(oracleOwnerSigner).setAssetPricer(underlyingAsset, CHAINLINK_WETH_PRICER_STETH);
 
   const currentOption = await vault.currentOption();
@@ -75,13 +71,15 @@ const setOpynExpiryPrice = async (vault, underlyingAsset, underlyingSettlePrice,
   await increaseTo(expiry.toNumber() + ORACLE_LOCKING_PERIOD + 1);
 
   const pricerContract = await ethers.getContractAt("IYearnPricer", WSTETH_PRICER);
-  const collateralPricer = await pricerContract.connect(ownerSigner);
 
-  await oracle.setExpiryPrice(underlyingAsset, expiry, underlyingSettlePrice);
+  await network.provider.request({ method: "hardhat_impersonateAccount", params: [CHAINLINK_WETH_PRICER_STETH] });
+  const pricerSigner = await ethers.provider.getSigner(CHAINLINK_WETH_PRICER_STETH);
+
+  await oracle.connect(pricerSigner).setExpiryPrice(underlyingAsset, expiry, underlyingSettlePrice);
   await network.provider.request({ method: "hardhat_impersonateAccount", params: [YEARN_PRICER_OWNER], });
 
   const yearnPricerSigner = await ethers.provider.getSigner(YEARN_PRICER_OWNER);
-  const receipt = await collateralPricer.connect(yearnPricerSigner).setExpiryPriceInOracle(expiry);
+  const receipt = await pricerContract.connect(yearnPricerSigner).setExpiryPriceInOracle(expiry);
 
   const block = await ethers.provider.getBlock(receipt.blockNumber);
   await increaseTo(block.timestamp + ORACLE_DISPUTE_PERIOD + 1);
