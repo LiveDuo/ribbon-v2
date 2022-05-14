@@ -30,7 +30,7 @@ const increaseTo = async (amount) => {
 }
 
 const setOpynExpiryPrice = async (vault, underlyingAsset, underlyingSettlePrice, opynOracle, stethPricer, wethPricerSigner, stethPricerSigner) => {
-  
+
   // increase time (oracle locking period)
   const currentOption = await vault.currentOption();
   const otoken = await ethers.getContractAt("IOtoken", currentOption);
@@ -47,8 +47,6 @@ const setOpynExpiryPrice = async (vault, underlyingAsset, underlyingSettlePrice,
   const block = await ethers.provider.getBlock(receipt.blockNumber);
   await increaseTo(block.timestamp + ORACLE_DISPUTE_PERIOD + 1);
 };
-
-// contracts: RibbonThetaSTETHVault, IYearnPricer, ForceSend, IWETH, IERC20, IChainlinkOracle
 
 describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
 
@@ -109,8 +107,7 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     await ownerSigner.sendTransaction({to: oracleOwnerSigner._address, value: ethers.utils.parseEther('10')})
 
     // force send ether
-    const forceSendAmount = ethers.utils.parseEther("0.5")
-    await forceSend.connect(ownerSigner).go(CHAINLINK_WETH_PRICER_STETH, { value: forceSendAmount });
+    await forceSend.connect(ownerSigner).go(CHAINLINK_WETH_PRICER_STETH, { value: ethers.utils.parseEther("10") });
 
     // set asset pricer
     await opynOracle.connect(oracleOwnerSigner).setAssetPricer(assetAddress, CHAINLINK_WETH_PRICER_STETH);
