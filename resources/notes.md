@@ -48,3 +48,8 @@ struct SettleVaultArgs {
     // address to which we transfer the remaining collateral
     address to;
 }
+
+// https://github.com/ribbon-finance/metavault/blob/main/contracts/V2/interfaces/IRibbonVault.sol
+// https://github.com/ribbon-finance/ribbon-v2/blob/master/contracts/vaults/STETHVault/RibbonThetaSTETHVault.sol
+// https://docs.idle.finance/developers/perpetual-yield-tranches/methods
+// https://etherscan.io/address/0x25751853eab4d0eb3652b5eb6ecb102a2789644b#readProxyContract
