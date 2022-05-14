@@ -19,6 +19,7 @@ const ORACLE_OWNER = "0x2FCb2fc8dD68c48F406825255B4446EDFbD3e140";
 const CHAINLINK_WETH_PRICER_STETH = "0x128cE9B4D97A6550905dE7d9Abc2b8C747b0996C";
 const WSTETH_PRICER = "0x4661951D252993AFa69b36bcc7Ba7da4a48813bF";
 const YEARN_PRICER_OWNER = "0xfacb407914655562d6619b0048a612B1795dF783";
+const VAULT_ADDRESS = "0x25751853eab4d0eb3652b5eb6ecb102a2789644b";
 
 // https://github.com/ribbon-finance/metavault/blob/main/contracts/V2/interfaces/IRibbonVault.sol
 // https://github.com/ribbon-finance/ribbon-v2/blob/master/contracts/vaults/STETHVault/RibbonThetaSTETHVault.sol
@@ -34,13 +35,6 @@ const increaseTo = async (amount) => {
   await ethers.provider.send("evm_increaseTime", [duration.toNumber()]);
   await ethers.provider.send("evm_mine", []);
 }
-
-const rollToNextOption = async (vault, ownerSigner, keeperSigner) => {
-  const _underlying = await vault.WETH();
-  await setOpynExpiryPrice(vault, _underlying, 100000000, ownerSigner);
-  await vault.connect(ownerSigner).commitAndClose();
-  await vault.connect(keeperSigner).rollToNextOption();
-};
 
 const setOpynExpiryPrice = async (vault, underlyingAsset, underlyingSettlePrice, ownerSigner) => {
 
@@ -84,12 +78,8 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
   
   before(async function () {
 
-    // get signers
-    const [, userSigner] = await ethers.getSigners();
-
     // deploy vault proxy
-    const deployVaultTx = await ethers.getContractAt("RibbonThetaSTETHVault", '0x25751853eab4d0eb3652b5eb6ecb102a2789644b');
-    vault = deployVaultTx.connect(userSigner);
+    vault = await ethers.getContractAt("RibbonThetaSTETHVault", VAULT_ADDRESS);
   });
 
   it("completes the withdrawal", async function () {
@@ -107,24 +97,29 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
 
     // initialize withdraw
     console.log('initializing withdraw...')
+    const _underlying = await vault.WETH();
     const keeperAddress = await vault.keeper()
     await network.provider.request({ method: "hardhat_impersonateAccount", params: [keeperAddress] });
     const keeperSigner = await ethers.provider.getSigner(keeperAddress);
-    await rollToNextOption(vault, ownerSigner, keeperSigner);
+    await setOpynExpiryPrice(vault, _underlying, 100000000, ownerSigner);
+    await vault.connect(ownerSigner).commitAndClose();
+    await vault.connect(keeperSigner).rollToNextOption();
     await network.provider.request({ method: "hardhat_impersonateAccount", params: [vault.address] });
     const vaultSigner = await ethers.provider.getSigner(vault.address);
     await ownerSigner.sendTransaction({to: vaultSigner._address, value: ethers.utils.parseEther('10')})
-    await vault.connect(vaultSigner).transfer(ownerSigner.address, depositAmount.mul(2))
+    await vault.connect(vaultSigner).transfer(ownerSigner.address, depositAmount)
     await vault.connect(ownerSigner).initiateWithdraw(depositAmount);
     
     // complete withdraw
     console.log('completing withdraw...')
-    await rollToNextOption(vault, ownerSigner, keeperSigner)
+    await setOpynExpiryPrice(vault, _underlying, 100000000, ownerSigner);
+    await vault.connect(ownerSigner).commitAndClose();
+    await vault.connect(keeperSigner).rollToNextOption();
     const intermediaryAssetContract = await ethers.getContractAt("IERC20", STETH_ADDRESS);
-    const beforeBalance = await intermediaryAssetContract.balanceOf(userSigner.address);
+    const balanceBefore = await intermediaryAssetContract.balanceOf(userSigner.address);
     await vault.connect(ownerSigner).completeWithdraw({ gasPrice: ethers.utils.parseUnits("30", "gwei") });
-    const afterBalance = await intermediaryAssetContract.balanceOf(userSigner.address);
-    assert.ok((afterBalance.sub(beforeBalance)).lt(depositAmount));
+    const balanceAfter = await intermediaryAssetContract.balanceOf(userSigner.address);
+    assert.ok((balanceAfter).gt(balanceBefore.sub(depositAmount)));
 
   });
 });
