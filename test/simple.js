@@ -85,23 +85,22 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
   it("completes the withdrawal", async function () {
 
     // get signers
-    const [ownerSigner, userSigner] = await ethers.getSigners();
+    const [ownerSigner] = await ethers.getSigners();
 
     // deposit eth into the vault
     console.log('depositing eth...')
     const asset = await vault.WETH();
     const wethContract = await ethers.getContractAt("IWETH", asset);
-    await wethContract.connect(userSigner).deposit({ value: ethers.utils.parseEther("100") });
+    await wethContract.connect(ownerSigner).deposit({ value: ethers.utils.parseEther("100") });
     const depositAmount = ethers.utils.parseEther("1");
     await vault.connect(ownerSigner).depositETH({ value: depositAmount });
 
     // initialize withdraw
     console.log('initializing withdraw...')
-    const _underlying = await vault.WETH();
     const keeperAddress = await vault.keeper()
     await network.provider.request({ method: "hardhat_impersonateAccount", params: [keeperAddress] });
     const keeperSigner = await ethers.provider.getSigner(keeperAddress);
-    await setOpynExpiryPrice(vault, _underlying, 100000000, ownerSigner);
+    await setOpynExpiryPrice(vault, asset, 100000000, ownerSigner);
     await vault.connect(ownerSigner).commitAndClose();
     await vault.connect(keeperSigner).rollToNextOption();
     await network.provider.request({ method: "hardhat_impersonateAccount", params: [vault.address] });
@@ -116,9 +115,9 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     await vault.connect(ownerSigner).commitAndClose();
     await vault.connect(keeperSigner).rollToNextOption();
     const intermediaryAssetContract = await ethers.getContractAt("IERC20", STETH_ADDRESS);
-    const balanceBefore = await intermediaryAssetContract.balanceOf(userSigner.address);
+    const balanceBefore = await intermediaryAssetContract.balanceOf(ownerSigner.address);
     await vault.connect(ownerSigner).completeWithdraw({ gasPrice: ethers.utils.parseUnits("30", "gwei") });
-    const balanceAfter = await intermediaryAssetContract.balanceOf(userSigner.address);
+    const balanceAfter = await intermediaryAssetContract.balanceOf(ownerSigner.address);
     assert.ok((balanceAfter).gt(balanceBefore.sub(depositAmount)));
 
   });
