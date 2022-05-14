@@ -18,6 +18,7 @@ module.exports = {
       chainId: 1,
       forking: {
         url: process.env.TEST_URI,
+        blockNumber: 14500000,
         gasLimit: 8e6,
       },
     },

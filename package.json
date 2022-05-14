@@ -4,12 +4,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@chainlink/contracts": "^0.4.0",
-    "@openzeppelin/contracts": "4.3.1",
-    "@openzeppelin/contracts-upgradeable": "4.3.1",
-    "@ribbon-finance/rvol": "^1.4.2",
-    "dotenv": "^10.0.0",
-    "moment-timezone": "^0.5.33"
+    "dotenv": "^10.0.0"
   },
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "^2.0.5",
