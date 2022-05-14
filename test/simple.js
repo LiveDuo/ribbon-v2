@@ -65,7 +65,7 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     console.log('getting contract & signers...')
 
     // get vault proxy contract
-    vault = await ethers.getContractAt("RibbonThetaSTETHVault", VAULT_ADDRESS);
+    vault = await ethers.getContractAt("IRibbonThetaSTETHVault", VAULT_ADDRESS);
     
     // get oracle contract
     opynOracle = await ethers.getContractAt("IChainlinkOracle", GAMMA_ORACLE, ownerSigner);
