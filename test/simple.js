@@ -1,7 +1,5 @@
 const { ethers, network } = require("hardhat");
 
-const ORACLE_ABI = require("../abis/OpynOracle.json");
-
 const { assert } = require("chai");
 
 const moment = require("moment-timezone");
@@ -50,10 +48,12 @@ const setOpynExpiryPrice = async (vault, underlyingAsset, underlyingSettlePrice,
   await increaseTo(block.timestamp + ORACLE_DISPUTE_PERIOD + 1);
 };
 
+// contracts: RibbonThetaSTETHVault, IYearnPricer, ForceSend, IWETH, IERC20, IChainlinkOracle
+
 describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
 
   // contracts
-  let vault, opynOracle, stethPricer;
+  let vault, opynOracle, stethPricer, wethContract, intermediaryAssetContract;
 
   // signers
   let wethPricerSigner, stethPricerSigner, keeperSigner, vaultSigner;
@@ -66,9 +66,9 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
 
     // get vault proxy contract
     vault = await ethers.getContractAt("RibbonThetaSTETHVault", VAULT_ADDRESS);
-
+    
     // get oracle contract
-    opynOracle = new ethers.Contract(GAMMA_ORACLE, ORACLE_ABI, ownerSigner);
+    opynOracle = await ethers.getContractAt("IChainlinkOracle", GAMMA_ORACLE, ownerSigner);
 
     // get oracle contract
     stethPricer = await ethers.getContractAt("IYearnPricer", WSTETH_PRICER);
@@ -77,6 +77,13 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     const forceSendContract = await ethers.getContractFactory("ForceSend");
     const forceSend = await forceSendContract.deploy(); 
     
+    // get weth contract
+    const assetAddress = await vault.WETH();
+    wethContract = await ethers.getContractAt("IWETH", assetAddress);
+
+    // get intermediary asset contract
+    intermediaryAssetContract = await ethers.getContractAt("IERC20", STETH_ADDRESS);
+
     // get vault signer
     await network.provider.request({ method: "hardhat_impersonateAccount", params: [vault.address] });
     vaultSigner = await ethers.provider.getSigner(vault.address);
@@ -99,13 +106,13 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     // get oracle owner signer
     await network.provider.request({ method: "hardhat_impersonateAccount", params: [ORACLE_OWNER] });
     const oracleOwnerSigner = await ethers.provider.getSigner(ORACLE_OWNER);
+    await ownerSigner.sendTransaction({to: oracleOwnerSigner._address, value: ethers.utils.parseEther('10')})
 
     // force send ether
     const forceSendAmount = ethers.utils.parseEther("0.5")
     await forceSend.connect(ownerSigner).go(CHAINLINK_WETH_PRICER_STETH, { value: forceSendAmount });
 
     // set asset pricer
-    const assetAddress = await vault.WETH();
     await opynOracle.connect(oracleOwnerSigner).setAssetPricer(assetAddress, CHAINLINK_WETH_PRICER_STETH);
 
   });
@@ -117,9 +124,8 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
 
     // deposit eth into the vault
     console.log('depositing eth...')
-    const assetAddress = await vault.WETH();
+    const assetAddress = wethContract.address;
     const depositAmount = ethers.utils.parseEther("1");
-    const wethContract = await ethers.getContractAt("IWETH", assetAddress);
     await wethContract.connect(ownerSigner).deposit({ value: ethers.utils.parseEther("100") });
     await vault.connect(ownerSigner).depositETH({ value: depositAmount });
 
@@ -136,9 +142,8 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
     await setOpynExpiryPrice(vault, assetAddress, 100000000, opynOracle, stethPricer, wethPricerSigner, stethPricerSigner);
     await vault.connect(ownerSigner).commitAndClose();
     await vault.connect(keeperSigner).rollToNextOption();
-    const intermediaryAssetContract = await ethers.getContractAt("IERC20", STETH_ADDRESS);
     const balanceBefore = await intermediaryAssetContract.balanceOf(ownerSigner.address);
-    await vault.connect(ownerSigner).completeWithdraw({ gasPrice: ethers.utils.parseUnits("30", "gwei") });
+    await vault.connect(ownerSigner).completeWithdraw();
     const balanceAfter = await intermediaryAssetContract.balanceOf(ownerSigner.address);
     assert.ok((balanceAfter).gt(balanceBefore.sub(depositAmount)));
 
