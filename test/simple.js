@@ -14,8 +14,8 @@ const ORACLE_DISPUTE_PERIOD = 7200;
 
 // vault
 const STETH_ADDRESS = "0xae7ab96520de3a18e5e111b5eaab095312d7fe84";
-const GAMMA_ORACLE = "0x789cD7AB3742e23Ce0952F6Bc3Eb3A73A0E08833" // THIS
-const ORACLE_OWNER = "0x2FCb2fc8dD68c48F406825255B4446EDFbD3e140"
+const GAMMA_ORACLE = "0x789cD7AB3742e23Ce0952F6Bc3Eb3A73A0E08833";
+const ORACLE_OWNER = "0x2FCb2fc8dD68c48F406825255B4446EDFbD3e140";
 const CHAINLINK_WETH_PRICER_STETH = "0x128cE9B4D97A6550905dE7d9Abc2b8C747b0996C";
 const WSTETH_PRICER = "0x4661951D252993AFa69b36bcc7Ba7da4a48813bF";
 const YEARN_PRICER_OWNER = "0xfacb407914655562d6619b0048a612B1795dF783";
@@ -27,7 +27,7 @@ const YEARN_PRICER_OWNER = "0xfacb407914655562d6619b0048a612B1795dF783";
 
 const increaseTo = async (amount) => {
   const target = ethers.BigNumber.from(amount);
-  const block = await ethers.provider.getBlock("latest")
+  const block = await ethers.provider.getBlock("latest");
   const now = ethers.BigNumber.from(block.timestamp);
   const duration = ethers.BigNumber.from(target.sub(now));
 
@@ -36,7 +36,7 @@ const increaseTo = async (amount) => {
 }
 
 const rollToNextOption = async (vault, ownerSigner, keeperSigner) => {
-  const _underlying = await vault.WETH()
+  const _underlying = await vault.WETH();
   await setOpynExpiryPrice(vault, _underlying, 100000000, ownerSigner);
   await vault.connect(ownerSigner).commitAndClose();
   await vault.connect(keeperSigner).rollToNextOption();
@@ -99,18 +99,17 @@ describe("RibbonThetaSTETHVault - stETH (Call) - #completeWithdraw", () => {
 
     // deposit eth into the vault
     console.log('depositing eth...')
-    const asset = await vault.WETH()
-    const keeperAddress = await vault.keeper()
-    await network.provider.request({ method: "hardhat_impersonateAccount", params: [keeperAddress] });
-    const keeperSigner = await ethers.provider.getSigner(keeperAddress);
+    const asset = await vault.WETH();
     const wethContract = await ethers.getContractAt("IWETH", asset);
     await wethContract.connect(userSigner).deposit({ value: ethers.utils.parseEther("100") });
     const depositAmount = ethers.utils.parseEther("1");
-    await vault.depositETH({ value: depositAmount });
     await vault.connect(ownerSigner).depositETH({ value: depositAmount });
 
     // initialize withdraw
     console.log('initializing withdraw...')
+    const keeperAddress = await vault.keeper()
+    await network.provider.request({ method: "hardhat_impersonateAccount", params: [keeperAddress] });
+    const keeperSigner = await ethers.provider.getSigner(keeperAddress);
     await rollToNextOption(vault, ownerSigner, keeperSigner);
     await network.provider.request({ method: "hardhat_impersonateAccount", params: [vault.address] });
     const vaultSigner = await ethers.provider.getSigner(vault.address);
